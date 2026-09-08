@@ -1,6 +1,6 @@
 {
-  "name": "@di-framework/componentize-qjs-darwin",
-  "version": "0.4.4-di.2-arm64",
+  "name": "@di-framework/componentize-qjs",
+  "version": "0.4.4-di.2-darwin-arm64",
   "description": "darwin arm64 CLI for @di-framework/componentize-qjs",
   "license": "Apache-2.0",
   "repository": {
@@ -10,7 +10,8 @@
   },
   "os": ["darwin"],
   "cpu": ["arm64"],
+  "bin": { "componentize-qjs": "./bin/componentize-qjs" },
   "engines": { "node": ">=18" },
   "files": ["bin", "README.md", "LICENSE"],
-  "publishConfig": { "access": "public", "tag": "di-arm64" }
+  "publishConfig": { "access": "public", "tag": "di-darwin-arm64" }
 }

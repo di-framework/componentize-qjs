@@ -8,30 +8,40 @@ const PACKAGE_NAME = '@di-framework/componentize-qjs';
 const WRAPPER_VERSION = require('./package.json').version;
 const requireFromHere = createRequire(__filename);
 
-function platformPackageName(platform = process.platform) {
-  return `${PACKAGE_NAME}-${platform}`;
+function platformAliasName(platform = process.platform, arch = process.arch) {
+  return `componentize-qjs-${platform}-${arch}`;
 }
 
-function platformPackageVersion(arch = process.arch, wrapperVersion = WRAPPER_VERSION) {
-  return `${wrapperVersion}-${arch}`;
+function platformPackageVersion(
+  platform = process.platform,
+  arch = process.arch,
+  wrapperVersion = WRAPPER_VERSION,
+) {
+  return `${wrapperVersion}-${platform}-${arch}`;
 }
 
 function platformPackageId(platform = process.platform, arch = process.arch) {
-  return `${platformPackageName(platform)}@${platformPackageVersion(arch)}`;
+  return `${PACKAGE_NAME}@${platformPackageVersion(platform, arch)}`;
 }
 
-function packageMatchesArch(pkg, arch) {
+function packageMatchesPlatform(pkg, platform, arch) {
+  if (Array.isArray(pkg.os) && pkg.os.length > 0 && !pkg.os.includes(platform)) {
+    return false;
+  }
   if (Array.isArray(pkg.cpu) && pkg.cpu.length > 0 && !pkg.cpu.includes(arch)) {
     return false;
   }
-  if (typeof pkg.version === 'string' && /-(?:arm64|x64)$/.test(pkg.version)) {
-    return pkg.version.endsWith(`-${arch}`);
+  if (
+    typeof pkg.version === 'string' &&
+    /-(?:darwin|linux|win32|android)-(?:arm64|x64)$/.test(pkg.version)
+  ) {
+    return pkg.version.endsWith(`-${platform}-${arch}`);
   }
   return true;
 }
 
 function nativeCliPath(platform = process.platform, arch = process.arch) {
-  const names = [platformPackageName(platform), `${PACKAGE_NAME}-${platform}-${arch}`];
+  const names = [platformAliasName(platform, arch), PACKAGE_NAME];
   const bin = platform === 'win32' ? 'componentize-qjs.exe' : 'componentize-qjs';
   for (const name of names) {
     let packageJson;
@@ -46,7 +56,7 @@ function nativeCliPath(platform = process.platform, arch = process.arch) {
     } catch {
       pkg = {};
     }
-    if (!packageMatchesArch(pkg, arch)) continue;
+    if (!packageMatchesPlatform(pkg, platform, arch)) continue;
     const resolved = join(dirname(packageJson), 'bin', bin);
     if (existsSync(resolved)) return resolved;
   }
@@ -57,7 +67,7 @@ module.exports = {
   PACKAGE_NAME,
   WRAPPER_VERSION,
   nativeCliPath,
-  platformPackageName,
+  platformAliasName,
   platformPackageVersion,
   platformPackageId,
 };

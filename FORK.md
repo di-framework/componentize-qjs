@@ -32,16 +32,25 @@ files instead of compiling the runtime.
 
 ## npm
 
-`@di-framework/componentize-qjs` is a JS wrapper. The native CLI is in
-optional platform packages. GitHub Actions publishes them from
-`.github/workflows/release.yml` using npm OIDC trusted publishing (no token).
-The wrapper (`0.4.4-di.2`) publishes to the `di` dist-tag. Each OS package
-publishes one version per CPU (`0.4.4-di.2-arm64`, `0.4.4-di.2-x64`) to the
-`di-arm64` / `di-x64` dist-tags. npm cannot install two versions of the same
-package as optional dependencies, so the wrapper aliases those versions
-(`npm:@di-framework/componentize-qjs-darwin@0.4.4-di.2-arm64`) and relies on
-each tarball's `os` / `cpu` fields to skip the wrong machine.
-On npmjs.com, the trusted publisher must be:
+Everything publishes as `@di-framework/componentize-qjs` (one npm package, one
+trusted publisher). GitHub Actions publishes from `.github/workflows/release.yml`
+using npm OIDC (no token).
+
+| Version | Dist-tag | Contents |
+| --- | --- | --- |
+| `0.4.4-di.2` | `di` | JS wrapper |
+| `0.4.4-di.2-darwin-arm64` | `di-darwin-arm64` | native CLI |
+| `0.4.4-di.2-darwin-x64` | `di-darwin-x64` | native CLI |
+| `0.4.4-di.2-linux-x64` | `di-linux-x64` | native CLI |
+| `0.4.4-di.2-linux-arm64` | `di-linux-arm64` | native CLI |
+| `0.4.4-di.2-win32-x64` | `di-win32-x64` | native CLI |
+
+npm cannot install two versions of the same package as optional dependencies, so
+the wrapper aliases each native version into an unscoped folder
+(`componentize-qjs-darwin-arm64`: `npm:@di-framework/componentize-qjs@0.4.4-di.2-darwin-arm64`)
+and each tarball's `os` / `cpu` fields skip the wrong machine.
+
+On npmjs.com, the trusted publisher for `@di-framework/componentize-qjs` is:
 
 - Organization: `di-framework`
 - Repository: `componentize-qjs`
@@ -49,16 +58,8 @@ On npmjs.com, the trusted publisher must be:
 - Environment name: empty
 - Allow npm publish: checked
 
-Create these three packages (not one per CPU):
-
-| Package | Versions |
-| --- | --- |
-| `@di-framework/componentize-qjs-darwin` | `0.4.4-di.2-arm64`, `0.4.4-di.2-x64` |
-| `@di-framework/componentize-qjs-linux` | `0.4.4-di.2-x64`, `0.4.4-di.2-arm64` |
-| `@di-framework/componentize-qjs-win32` | `0.4.4-di.2-x64` |
-
-There is no postinstall download. `npm install` / `bun install` selects the
-matching optional dependency.
+There is no postinstall download and no extra platform packages. `npm install` /
+`bun install` of the wrapper selects the matching optional version.
 
 ```js
 const { nativeCliPath } = require('@di-framework/componentize-qjs');
