@@ -25,8 +25,10 @@ Wasmtime **48** can stub those imports with `func_new_concurrent` when
   resource-free `monotonic-clock` `now`/`resolution`). Full P2/P3 `add_to_linker`
   disagrees with the prebuilt `wasi:io@0.2.12` `error` resource.
 
-The embedded QuickJS **runtime.wasm** is still the 0.4.4 prebuilt. This fork
-does not rebuild `wasm32-wasip2` artifacts.
+The embedded QuickJS **runtime.wasm** is still the 0.4.4 prebuilt, vendored
+under `crates/core/prebuilt/` (gitignored `*.wasm` has an exception for that
+directory). This fork does not rebuild `wasm32-wasip2` artifacts. CI uses those
+files instead of compiling the runtime.
 
 ## npm
 

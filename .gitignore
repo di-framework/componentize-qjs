@@ -1,3 +1,4 @@
 target/
 *.wasm
+!crates/core/prebuilt/*.wasm
 .idea/

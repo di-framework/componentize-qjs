@@ -5,13 +5,14 @@ runs:
   steps:
     - name: Cache runtime wasm
       id: cache
+      if: hashFiles('crates/core/prebuilt/runtime-sync.wasm') == ''
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: crates/core/prebuilt
         key: runtime-wasm-v2-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'crates/runtime/**', 'crates/core/build.rs') }}
 
     - name: Build runtime wasm
-      if: steps.cache.outputs.cache-hit != 'true'
+      if: hashFiles('crates/core/prebuilt/runtime-sync.wasm') == '' && steps.cache.outputs.cache-hit != 'true'
       shell: bash
       run: |
         cargo build -p componentize-qjs
