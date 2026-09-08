@@ -1,0 +1,55 @@
+# Fork notes
+
+This is a temporary fork of
+[`andreiltd/componentize-qjs`](https://github.com/andreiltd/componentize-qjs)
+`v0.4.4` (Apache-2.0).
+
+## Why it exists
+
+Stock componentize-qjs 0.4.4 / jco 1.32.1 uses wasmtime **47**. During Wizer,
+unknown imports are stubbed with sync `func_new`. Guest worlds that import
+`async func` (wasmCloud postgres, keyvalue, blobstore, messaging, secrets,
+outgoing HTTP) fail with `type mismatch with async`.
+
+Wasmtime **48** can stub those imports with `func_new_concurrent` when
+`Config::concurrency_support(true)` is set.
+
+## What changed
+
+- `wasmtime` / `wasmtime-wasi` / `wasmtime-wizer` / preview1 adapter: 47 → 48
+- `config.concurrency_support(true)`
+- `define_unknown_imports_as_traps` for unknown imports (including guest
+  `async func`s)
+- Overlay only the WASI P2 interfaces the 0.4.4 prebuilt runtime actually
+  calls during init (`random`, `wall-clock`, `cli` environment/exit, and a
+  resource-free `monotonic-clock` `now`/`resolution`). Full P2/P3 `add_to_linker`
+  disagrees with the prebuilt `wasi:io@0.2.12` `error` resource.
+
+The embedded QuickJS **runtime.wasm** is still the 0.4.4 prebuilt. This fork
+does not rebuild `wasm32-wasip2` artifacts.
+
+## npm
+
+`@di-framework/componentize-qjs` is a JS wrapper. The native CLI is in
+optional platform packages:
+
+| Package | OS / CPU |
+| --- | --- |
+| `@di-framework/componentize-qjs-darwin-arm64` | darwin / arm64 |
+| `@di-framework/componentize-qjs-darwin-x64` | darwin / x64 |
+| `@di-framework/componentize-qjs-linux-x64` | linux / x64 (gnu) |
+| `@di-framework/componentize-qjs-linux-arm64` | linux / arm64 (gnu) |
+| `@di-framework/componentize-qjs-win32-x64` | win32 / x64 |
+
+There is no postinstall download. `npm install` / `bun install` selects the
+matching optional dependency.
+
+```js
+const { nativeCliPath } = require('@di-framework/componentize-qjs');
+nativeCliPath(); // absolute path, or undefined if the platform package is missing
+```
+
+## Upstream
+
+Please prefer a patch on `andreiltd/componentize-qjs` once they bump wasmtime.
+This fork should then be retired.

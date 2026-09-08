@@ -8,8 +8,8 @@ version = "0.4.4"
 edition = "2024"
 rust-version = "1.94"
 license = "Apache-2.0"
-repository = "https://github.com/andreiltd/componentize-qjs"
-homepage = "https://github.com/andreiltd/componentize-qjs"
+repository = "https://github.com/di-framework/componentize-qjs"
+homepage = "https://github.com/di-framework/componentize-qjs"
 
 [workspace.dependencies]
 componentize-qjs = { path = "crates/core", version = "0.4.4", default-features = false }
@@ -17,8 +17,8 @@ componentize-qjs-cli = { path = ".", version = "0.4.4", default-features = false
 anyhow = "1.0"
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", default-features = false, features = ["rt", "macros"] }
-wasmtime = { version = "47", features = ["component-model", "async"] }
-wasmtime-wasi = { version = "47", default-features = false, features = ["p2", "p3"] }
+wasmtime = { version = "48", features = ["component-model", "async", "component-model-async"] }
+wasmtime-wasi = { version = "48", default-features = false, features = ["p2", "p3"] }
 wit-parser = "0.258"
 
 [package]
@@ -78,7 +78,8 @@ wasmtime-wasi.workspace = true
 wit-parser.workspace = true
 
 [profile.release]
-lto = true
+# Full LTO of wasmtime 48 OOMs typical CI runners. Thin is enough for this fork.
+lto = "thin"
 
 [profile.dev]
 debug = "line-tables-only"

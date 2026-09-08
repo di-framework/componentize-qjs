@@ -1,6 +1,11 @@
-# componentize-qjs
+# @di-framework/componentize-qjs
 
-[![CI](https://github.com/andreiltd/componentize-qjs/actions/workflows/ci.yml/badge.svg)](https://github.com/andreiltd/componentize-qjs/actions/workflows/ci.yml)
+> Fork of [`andreiltd/componentize-qjs`](https://github.com/andreiltd/componentize-qjs) `v0.4.4`.
+> This tree bumps the wizer host to wasmtime 48 with `concurrency_support` so
+> unlabeled imported WIT `async func`s (for example `wasmcloud:postgres@0.2.0`)
+> componentize. See [FORK.md](FORK.md). The patch is intended to go upstream;
+> this repository exists until that lands.
+
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 Convert JavaScript source code into
@@ -52,14 +57,20 @@ Prebuilt CLI archives are attached to each
 [GitHub release](https://github.com/andreiltd/componentize-qjs/releases) for
 Linux, macOS, and Windows.
 
-### npm package
+### npm package (this fork)
 
 ```bash
-npm install componentize-qjs
+npm install @di-framework/componentize-qjs
 ```
 
-This pulls in the right prebuilt native binding for your platform via the
-`@andreiltd/componentize-qjs-binding-*` optional dependencies.
+This installs a JS wrapper plus the matching optional platform package
+(`@di-framework/componentize-qjs-darwin-arm64`, `linux-x64`, …). There is no
+postinstall download. The native CLI is the wasmtime-48 Wizer host described
+in [FORK.md](FORK.md).
+
+Upstream `componentize-qjs` still publishes NAPI bindings as `componentize-qjs`
+plus `@andreiltd/componentize-qjs-binding-*`. Use that package for the unpatched
+wasmtime-47 host.
 
 If you want to build from source run:
 

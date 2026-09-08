@@ -14,9 +14,13 @@ use bytes::Bytes;
 use resolver::Resolver;
 use stubwasi::{stub_internal_imports, stub_wasi_imports};
 use wasi_preview1_component_adapter_provider::WASI_SNAPSHOT_PREVIEW1_REACTOR_ADAPTER;
-use wasmtime::component::{Component as WasmtimeComponent, Linker, ResourceTable};
+use wasmtime::component::{Component as WasmtimeComponent, Linker, ResourceTable, Val};
 use wasmtime::{Config, Engine, Store};
+use wasmtime_wasi::cli::{WasiCli, WasiCliView};
+use wasmtime_wasi::clocks::{WasiClocks, WasiClocksView};
+use wasmtime_wasi::p2::bindings::{cli, clocks, random};
 use wasmtime_wasi::p2::pipe::{MemoryInputPipe, MemoryOutputPipe};
+use wasmtime_wasi::random::WasiRandom;
 use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 use wasmtime_wizer::{WasmtimeWizerComponent, Wizer};
 use wit_parser::Resolve;
@@ -234,6 +238,7 @@ async fn wizer_init(
     config.wasm_component_model(true);
     config.wasm_component_model_async(true);
     config.wasm_component_model_map(true);
+    config.concurrency_support(true);
 
     let engine = Engine::new(&config)?;
     let mut store = Store::new(&engine, Ctx { wasi, table });
@@ -244,9 +249,30 @@ async fn wizer_init(
 
     let mut linker = Linker::new(&engine);
     linker.allow_shadowing(true);
+    // wasmtime 48's full P2/P3 linkers provide wasi:io resource types that do
+    // not match the 0.4.4 prebuilt runtime (`wasi:io/streams@0.2.12` `error`).
+    // Concurrent trap stubs satisfy imported `async func`s (the 47 limiter).
+    // Overlay only wasi:random — runtime ctors call insecure-seed.
     linker.define_unknown_imports_as_traps(&comp)?;
-    wasmtime_wasi::p2::add_to_linker_async(&mut linker)?;
-    wasmtime_wasi::p3::add_to_linker(&mut linker)?;
+    random::random::add_to_linker::<Ctx, WasiRandom>(&mut linker, |t| t.ctx().ctx.random())?;
+    random::insecure::add_to_linker::<Ctx, WasiRandom>(&mut linker, |t| t.ctx().ctx.random())?;
+    random::insecure_seed::add_to_linker::<Ctx, WasiRandom>(&mut linker, |t| t.ctx().ctx.random())?;
+    clocks::wall_clock::add_to_linker::<Ctx, WasiClocks>(&mut linker, Ctx::clocks)?;
+    cli::environment::add_to_linker::<Ctx, WasiCli>(&mut linker, Ctx::cli)?;
+    cli::exit::add_to_linker::<Ctx, WasiCli>(&mut linker, Ctx::cli)?;
+    // Resource-free monotonic clock. subscribe-* stays trapped because it
+    // returns wasi:io/poll pollables that disagree with the prebuilt runtime.
+    {
+        let mut instance = linker.instance("wasi:clocks/monotonic-clock@0.2.12")?;
+        instance.func_new("now", |_store, _ty, _params, results| {
+            results[0] = Val::U64(0);
+            Ok(())
+        })?;
+        instance.func_new("resolution", |_store, _ty, _params, results| {
+            results[0] = Val::U64(1);
+            Ok(())
+        })?;
+    }
 
     register_module_loader(&mut linker, resolver.clone())?;
 
@@ -271,7 +297,7 @@ async fn wizer_init(
 
     let component = wizer
         .snapshot_component(
-            cx,
+            &cx,
             &mut WasmtimeWizerComponent {
                 store: &mut store,
                 instance,

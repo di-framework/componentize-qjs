@@ -1,0 +1,5 @@
+LICENSE
+packages/*/bin/
+packages/*/LICENSE
+packages/*/README.md
+packages/.fork.md

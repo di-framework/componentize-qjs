@@ -1,0 +1,43 @@
+{
+  "name": "@di-framework/componentize-qjs",
+  "version": "0.4.4-di.1",
+  "description": "componentize-qjs CLI built against wasmtime 48 so imported WIT async funcs componentize",
+  "license": "Apache-2.0",
+  "author": "@di-framework Contributors",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/di-framework/componentize-qjs.git",
+    "directory": "cli-npm"
+  },
+  "homepage": "https://github.com/di-framework/componentize-qjs#readme",
+  "bugs": {
+    "url": "https://github.com/di-framework/componentize-qjs/issues"
+  },
+  "main": "./native-cli.cjs",
+  "exports": {
+    ".": "./native-cli.cjs",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "componentize-qjs": "./bin/componentize-qjs.cjs"
+  },
+  "files": [
+    "bin",
+    "native-cli.cjs",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "optionalDependencies": {
+    "@di-framework/componentize-qjs-darwin-arm64": "0.4.4-di.1",
+    "@di-framework/componentize-qjs-darwin-x64": "0.4.4-di.1",
+    "@di-framework/componentize-qjs-linux-x64": "0.4.4-di.1",
+    "@di-framework/componentize-qjs-linux-arm64": "0.4.4-di.1",
+    "@di-framework/componentize-qjs-win32-x64": "0.4.4-di.1"
+  }
+}

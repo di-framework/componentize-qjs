@@ -1,0 +1,147 @@
+name: Publish CLI npm packages
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish to npm after building
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cli-npm-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_PROFILE_RELEASE_LTO: "thin"
+
+jobs:
+  build:
+    name: Build CLI (${{ matrix.npm }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-14
+            npm: darwin-arm64
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+            npm: darwin-x64
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            npm: linux-x64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            npm: linux-arm64
+            cross: true
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            npm: win32-x64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools
+        if: matrix.cross
+        uses: taiki-e/setup-cross-toolchain-action@v1
+        with:
+          target: ${{ matrix.target }}
+
+      - name: Build CLI
+        run: cargo build --release --bin componentize-qjs --target ${{ matrix.target }}
+
+      - name: Stage artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          if [[ -f "target/${{ matrix.target }}/release/componentize-qjs.exe" ]]; then
+            cp "target/${{ matrix.target }}/release/componentize-qjs.exe" dist/
+          else
+            cp "target/${{ matrix.target }}/release/componentize-qjs" dist/
+          fi
+
+      - name: Upload CLI
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.npm }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'release' || inputs.publish
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24.x"
+          registry-url: https://registry.npmjs.org
+
+      - name: Ensure modern npm for OIDC trusted publishing
+        run: npm install -g npm@latest
+
+      - name: Download CLI artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Stage binaries and assets
+        run: |
+          set -euo pipefail
+          chmod +x cli-npm/stage-assets.sh cli-npm/stage-binary.sh
+          ./cli-npm/stage-assets.sh
+          for platform in darwin-arm64 darwin-x64 linux-x64 linux-arm64 win32-x64; do
+            dir="artifacts/cli-${platform}"
+            if [[ -f "$dir/componentize-qjs.exe" ]]; then
+              ./cli-npm/stage-binary.sh "$platform" "$dir/componentize-qjs.exe"
+            elif [[ -f "$dir/componentize-qjs" ]]; then
+              ./cli-npm/stage-binary.sh "$platform" "$dir/componentize-qjs"
+            else
+              echo "missing binary for $platform" >&2
+              ls -la "$dir" >&2 || true
+              exit 1
+            fi
+          done
+
+      - name: Publish platform packages then wrapper
+        run: |
+          set -euo pipefail
+          publish_dir() {
+            local dir="$1"
+            local name version
+            name="$(node -p "require('$dir/package.json').name")"
+            version="$(node -p "require('$dir/package.json').version")"
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "Skipping $name@$version (already published)"
+              return 0
+            fi
+            (cd "$dir" && npm publish --access public --provenance)
+          }
+          for dir in cli-npm/packages/*/; do
+            publish_dir "$dir"
+          done
+          publish_dir cli-npm
