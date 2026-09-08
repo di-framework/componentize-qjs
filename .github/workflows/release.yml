@@ -131,10 +131,10 @@ jobs:
         run: |
           set -euo pipefail
           publish_dir() {
-            local dir="$1"
+            local dir="${1%/}"
             local name version
-            name="$(node -p "require('$dir/package.json').name")"
-            version="$(node -p "require('$dir/package.json').version")"
+            name="$(node -p "require('./' + process.argv[1] + '/package.json').name" "$dir")"
+            version="$(node -p "require('./' + process.argv[1] + '/package.json').version" "$dir")"
             if npm view "$name@$version" version >/dev/null 2>&1; then
               echo "Skipping $name@$version (already published)"
               return 0
