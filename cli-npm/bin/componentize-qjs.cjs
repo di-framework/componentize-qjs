@@ -2,12 +2,12 @@
 'use strict';
 
 const { spawn } = require('node:child_process');
-const { nativeCliPath, platformPackageName } = require('../native-cli.cjs');
+const { nativeCliPath, platformPackageId } = require('../native-cli.cjs');
 
 const bin = nativeCliPath();
 if (bin === undefined) {
   process.stderr.write(
-    `@di-framework/componentize-qjs: native CLI not installed (${platformPackageName()}).\n` +
+    `@di-framework/componentize-qjs: native CLI not installed (${platformPackageId()}).\n` +
       'Install the matching optional dependency, or set DI_FRAMEWORK_COMPONENTIZE_QJS.\n',
   );
   process.exit(1);

@@ -35,7 +35,12 @@ files instead of compiling the runtime.
 `@di-framework/componentize-qjs` is a JS wrapper. The native CLI is in
 optional platform packages. GitHub Actions publishes them from
 `.github/workflows/release.yml` using npm OIDC trusted publishing (no token).
-Prerelease versions (`0.4.4-di.1`) publish to the `di` dist-tag.
+The wrapper (`0.4.4-di.2`) publishes to the `di` dist-tag. Each OS package
+publishes one version per CPU (`0.4.4-di.2-arm64`, `0.4.4-di.2-x64`) to the
+`di-arm64` / `di-x64` dist-tags. npm cannot install two versions of the same
+package as optional dependencies, so the wrapper aliases those versions
+(`npm:@di-framework/componentize-qjs-darwin@0.4.4-di.2-arm64`) and relies on
+each tarball's `os` / `cpu` fields to skip the wrong machine.
 On npmjs.com, the trusted publisher must be:
 
 - Organization: `di-framework`
@@ -44,15 +49,13 @@ On npmjs.com, the trusted publisher must be:
 - Environment name: empty
 - Allow npm publish: checked
 
-Platform packages:
+Create these three packages (not one per CPU):
 
-| Package | OS / CPU |
+| Package | Versions |
 | --- | --- |
-| `@di-framework/componentize-qjs-darwin-arm64` | darwin / arm64 |
-| `@di-framework/componentize-qjs-darwin-x64` | darwin / x64 |
-| `@di-framework/componentize-qjs-linux-x64` | linux / x64 (gnu) |
-| `@di-framework/componentize-qjs-linux-arm64` | linux / arm64 (gnu) |
-| `@di-framework/componentize-qjs-win32-x64` | win32 / x64 |
+| `@di-framework/componentize-qjs-darwin` | `0.4.4-di.2-arm64`, `0.4.4-di.2-x64` |
+| `@di-framework/componentize-qjs-linux` | `0.4.4-di.2-x64`, `0.4.4-di.2-arm64` |
+| `@di-framework/componentize-qjs-win32` | `0.4.4-di.2-x64` |
 
 There is no postinstall download. `npm install` / `bun install` selects the
 matching optional dependency.

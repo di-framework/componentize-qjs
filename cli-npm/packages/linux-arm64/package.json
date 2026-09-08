@@ -1,7 +1,7 @@
 {
-  "name": "@di-framework/componentize-qjs-linux-arm64",
-  "version": "0.4.4-di.1",
-  "description": "linux-arm64 CLI for @di-framework/componentize-qjs",
+  "name": "@di-framework/componentize-qjs-linux",
+  "version": "0.4.4-di.2-arm64",
+  "description": "linux arm64 CLI for @di-framework/componentize-qjs",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -12,5 +12,5 @@
   "cpu": ["arm64"],
   "engines": { "node": ">=18" },
   "files": ["bin", "README.md", "LICENSE"],
-  "publishConfig": { "access": "public" }
+  "publishConfig": { "access": "public", "tag": "di-arm64" }
 }
