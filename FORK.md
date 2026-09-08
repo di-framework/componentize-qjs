@@ -31,7 +31,17 @@ does not rebuild `wasm32-wasip2` artifacts.
 ## npm
 
 `@di-framework/componentize-qjs` is a JS wrapper. The native CLI is in
-optional platform packages:
+optional platform packages. GitHub Actions publishes them from
+`.github/workflows/release.yml` using npm OIDC trusted publishing (no token).
+On npmjs.com, the trusted publisher must be:
+
+- Organization: `di-framework`
+- Repository: `componentize-qjs`
+- Workflow filename: `release.yml`
+- Environment name: empty
+- Allow npm publish: checked
+
+Platform packages:
 
 | Package | OS / CPU |
 | --- | --- |
