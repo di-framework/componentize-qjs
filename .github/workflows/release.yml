@@ -139,7 +139,7 @@ jobs:
               echo "Skipping $name@$version (already published)"
               return 0
             fi
-            (cd "$dir" && npm publish --access public --provenance)
+            (cd "$dir" && npm publish --access public --provenance --tag di)
           }
           for dir in cli-npm/packages/*/; do
             publish_dir "$dir"

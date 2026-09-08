@@ -35,6 +35,7 @@ files instead of compiling the runtime.
 `@di-framework/componentize-qjs` is a JS wrapper. The native CLI is in
 optional platform packages. GitHub Actions publishes them from
 `.github/workflows/release.yml` using npm OIDC trusted publishing (no token).
+Prerelease versions (`0.4.4-di.1`) publish to the `di` dist-tag.
 On npmjs.com, the trusted publisher must be:
 
 - Organization: `di-framework`
