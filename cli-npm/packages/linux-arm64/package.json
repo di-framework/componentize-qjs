@@ -1,6 +1,6 @@
 {
   "name": "@di-framework/componentize-qjs",
-  "version": "0.4.4-di.2-linux-arm64",
+  "version": "0.4.4-di.3-linux-arm64",
   "description": "linux arm64 CLI for @di-framework/componentize-qjs",
   "license": "Apache-2.0",
   "repository": {

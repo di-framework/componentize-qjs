@@ -238,6 +238,7 @@ async fn wizer_init(
     config.wasm_component_model(true);
     config.wasm_component_model_async(true);
     config.wasm_component_model_map(true);
+    config.wasm_component_model_implements(true);
     config.concurrency_support(true);
 
     let engine = Engine::new(&config)?;

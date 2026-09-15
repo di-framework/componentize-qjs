@@ -57,12 +57,19 @@ fn stub_imports(component: &[u8], should_stub: impl Fn(&str) -> bool) -> Result<
     let config = ComposeConfig {
         dir: dir.path().to_path_buf(),
         definitions: vec!["stubs.wasm".into()],
+        // wasm-compose uses default features for output validation. Validate below
+        // with the same proposal support as the component encoder instead.
+        skip_validation: true,
         ..Default::default()
     };
 
-    ComponentComposer::new(&component_path, &config)
+    let composed = ComponentComposer::new(&component_path, &config)
         .compose()
-        .context("failed to compose stub component")
+        .context("failed to compose stub component")?;
+    wasmparser::Validator::new_with_features(wasmparser::WasmFeatures::all())
+        .validate_all(&composed)
+        .context("failed to validate composed component")?;
+    Ok(composed)
 }
 
 /// Build a component that exports trap implementations for the given imports.
