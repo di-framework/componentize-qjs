@@ -77,3 +77,8 @@ Enable `cm-implements` in the snapshot engine. Composition output is validated
 with proposal support matching the WIT encoder, replacing wasm-compose’s
 default-feature validation. The regression test invokes two imports of the same
 interface with distinct host implementations, both with and without WASI stubbing.
+
+Composition also preserves extern-name annotations on outer imports. wasm-compose
+0.258 otherwise keeps labels but loses `(implements ...)`, breaking wasmCloud
+routing. `componentize-qjs compose <input> --definition <provider> -o <output>`
+uses the same validated path for subsequent provider composition (including SQLite).

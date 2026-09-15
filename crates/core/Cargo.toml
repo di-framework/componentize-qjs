@@ -38,6 +38,7 @@ oxc_resolver = "11.21.0"
 tokio.workspace = true
 wit-parser.workspace = true
 wasmparser = "0.258"
+wasm-encoder = { version = "0.258", features = ["wasmparser"] }
 wit-component = { version = "0.258", features = ["dummy-module"] }
 wit-dylib = "0.258"
 wasi-preview1-component-adapter-provider = "48"

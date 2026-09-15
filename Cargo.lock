@@ -417,6 +417,7 @@ dependencies = [
  "ureq",
  "wasi-preview1-component-adapter-provider",
  "wasm-compose 0.258.0",
+ "wasm-encoder 0.258.0",
  "wasmparser 0.258.0",
  "wasmtime",
  "wasmtime-wasi",

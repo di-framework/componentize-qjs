@@ -22,6 +22,17 @@ async fn two_imports_of_one_interface_are_independently_callable() -> anyhow::Re
             js_path: None, module_root: None, world_name: Some("application"),
             stub_wasi, disable_gc: false, runtime: Runtime::DefaultSync,
         }).await?;
+        // Routing requires the interface annotations on the OUTER imports,
+        // not just labels or annotations buried in a nested component.
+        let (resolve, world) = match wit_parser::decoding::decode(&wasm)? {
+            wit_parser::decoding::DecodedWasm::Component(resolve, world) => (resolve, world),
+            _ => panic!("expected component"),
+        };
+        for label in ["first", "second"] {
+            let key = wit_parser::WorldKey::Name(label.to_string());
+            let item = &resolve.worlds[world].imports[&key];
+            assert_eq!(resolve.implements_value(&key, item).as_deref(), Some("test:named/query"));
+        }
         let mut config = Config::new();
         config.wasm_component_model(true).wasm_component_model_implements(true);
         let engine = Engine::new(&config)?;
