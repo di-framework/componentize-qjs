@@ -23,6 +23,7 @@ pub(crate) fn register(ctx: &rquickjs::Ctx<'_>, wit_def: Wit) -> rquickjs::Resul
     register_resource_classes(ctx, wit_def)?;
     register_root_imports(ctx)?;
     register_cqjs_namespace(ctx, wit_def)?;
+    crate::webassembly::register(ctx)?;
     Ok(())
 }
 
