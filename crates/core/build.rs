@@ -469,10 +469,13 @@ fn wasm_ld_wrapper(out_dir: &Path, wasm_ld: &Path) -> Result<PathBuf> {
         wasm_ld.display()
     );
     fs::write(&path, script).context("Failed to write wasm-ld wrapper")?;
-    let mut perms = fs::metadata(&path)?.permissions();
-    use std::os::unix::fs::PermissionsExt;
-    perms.set_mode(0o755);
-    fs::set_permissions(&path, perms)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&path)?.permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&path, perms)?;
+    }
     Ok(path)
 }
 

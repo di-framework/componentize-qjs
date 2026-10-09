@@ -6,7 +6,9 @@ import { tmpdir } from "node:os";
 import { mkdtempSync, rmSync } from "node:fs";
 
 const examplesDir = resolve(__dirname, "../../examples");
-const TIMEOUT = 30_000;
+// The default runtime carries the zwasm interpreter, so a debug host
+// componentize on a CI runner takes longer than the small opt-size runtime.
+const TIMEOUT = 120_000;
 
 function readExample(name) {
   return readFileSync(resolve(examplesDir, name), "utf-8");
