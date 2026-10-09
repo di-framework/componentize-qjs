@@ -57,12 +57,20 @@ fn stub_imports(component: &[u8], should_stub: impl Fn(&str) -> bool) -> Result<
     let config = ComposeConfig {
         dir: dir.path().to_path_buf(),
         definitions: vec!["stubs.wasm".into()],
+        // wasm-compose uses default features for output validation. Validate below
+        // with the same proposal support as the component encoder instead.
+        skip_validation: true,
         ..Default::default()
     };
 
-    ComponentComposer::new(&component_path, &config)
+    let composed = ComponentComposer::new(&component_path, &config)
         .compose()
-        .context("failed to compose stub component")
+        .context("failed to compose stub component")?;
+    let composed = preserve_import_annotations(component, &composed)?;
+    wasmparser::Validator::new_with_features(wasmparser::WasmFeatures::all())
+        .validate_all(&composed)
+        .context("failed to validate composed component")?;
+    Ok(composed)
 }
 
 /// Build a component that exports trap implementations for the given imports.
@@ -99,4 +107,73 @@ fn make_stub_component(
         .validate(true)
         .encode()
         .context("failed to encode stub component")
+}
+
+/// Compose provider components while retaining named host-interface identity.
+pub fn compose_with_definitions(
+    component_path: &std::path::Path,
+    definitions: Vec<std::path::PathBuf>,
+) -> Result<Vec<u8>> {
+    let original = std::fs::read(component_path)?;
+    let config = ComposeConfig {
+        definitions,
+        skip_validation: true,
+        ..Default::default()
+    };
+    let composed = ComponentComposer::new(component_path, &config).compose()?;
+    let composed = preserve_import_annotations(&original, &composed)?;
+    wasmparser::Validator::new_with_features(wasmparser::WasmFeatures::all())
+        .validate_all(&composed)?;
+    Ok(composed)
+}
+
+/// wasm-compose 0.258 retains import types and labels but drops extern-name
+/// annotations on the outer component. Copy those annotations from the input;
+/// indices, types, nested components and all other sections remain unchanged.
+fn preserve_import_annotations(original: &[u8], composed: &[u8]) -> Result<Vec<u8>> {
+    use wasm_encoder::reencode::{ReencodeComponent, RoundtripReencoder};
+    use wasmparser::{Parser, Payload};
+    let mut names = std::collections::HashMap::new();
+    let mut depth = 0;
+    for payload in Parser::new(0).parse_all(original) {
+        match payload? {
+            Payload::Version { .. } => depth += 1,
+            Payload::End(_) => depth -= 1,
+            Payload::ComponentImportSection(section) if depth == 1 => {
+                for import in section {
+                    let name = import?.name;
+                    names.insert(name.name, name);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut output = wasm_encoder::Component::new();
+    let mut depth = 0;
+    for payload in Parser::new(0).parse_all(composed) {
+        let payload = payload?;
+        match payload {
+            Payload::Version { .. } => depth += 1,
+            Payload::End(_) => depth -= 1,
+            Payload::ComponentImportSection(section) if depth == 1 => {
+                let mut imports = wasm_encoder::ComponentImportSection::new();
+                for import in section {
+                    let import = import?;
+                    let name = names.get(import.name.name).copied().unwrap_or(import.name);
+                    imports.import(name, RoundtripReencoder.component_type_ref(import.ty)?);
+                }
+                output.section(&imports);
+            }
+            _ if depth == 1 => {
+                if let Some((id, range)) = payload.as_section() {
+                    output.section(&wasm_encoder::RawSection {
+                        id,
+                        data: &composed[usize::try_from(range.start)?..usize::try_from(range.end)?],
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(output.finish())
 }
