@@ -110,12 +110,20 @@ fn make_stub_component(
 }
 
 /// Compose provider components while retaining named host-interface identity.
-pub fn compose_with_definitions(component_path: &std::path::Path, definitions: Vec<std::path::PathBuf>) -> Result<Vec<u8>> {
+pub fn compose_with_definitions(
+    component_path: &std::path::Path,
+    definitions: Vec<std::path::PathBuf>,
+) -> Result<Vec<u8>> {
     let original = std::fs::read(component_path)?;
-    let config = ComposeConfig { definitions, skip_validation: true, ..Default::default() };
+    let config = ComposeConfig {
+        definitions,
+        skip_validation: true,
+        ..Default::default()
+    };
     let composed = ComponentComposer::new(component_path, &config).compose()?;
     let composed = preserve_import_annotations(&original, &composed)?;
-    wasmparser::Validator::new_with_features(wasmparser::WasmFeatures::all()).validate_all(&composed)?;
+    wasmparser::Validator::new_with_features(wasmparser::WasmFeatures::all())
+        .validate_all(&composed)?;
     Ok(composed)
 }
 
@@ -158,7 +166,10 @@ fn preserve_import_annotations(original: &[u8], composed: &[u8]) -> Result<Vec<u
             }
             _ if depth == 1 => {
                 if let Some((id, range)) = payload.as_section() {
-                    output.section(&wasm_encoder::RawSection { id, data: &composed[usize::try_from(range.start)?..usize::try_from(range.end)?] });
+                    output.section(&wasm_encoder::RawSection {
+                        id,
+                        data: &composed[usize::try_from(range.start)?..usize::try_from(range.end)?],
+                    });
                 }
             }
             _ => {}

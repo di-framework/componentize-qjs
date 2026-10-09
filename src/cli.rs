@@ -75,7 +75,8 @@ pub async fn run(args: Vec<String>) -> Result<()> {
             output: std::path::PathBuf,
         }
         let args = ComposeArgs::try_parse_from(args)?;
-        let composed = componentize_qjs::stubwasi::compose_with_definitions(&args.input, args.definitions)?;
+        let composed =
+            componentize_qjs::stubwasi::compose_with_definitions(&args.input, args.definitions)?;
         fs::write(args.output, composed)?;
         return Ok(());
     }
