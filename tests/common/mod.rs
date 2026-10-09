@@ -35,6 +35,7 @@ pub fn engine() -> &'static Engine {
         config.wasm_component_model_async(true);
         config.wasm_component_model(true);
         config.wasm_component_model_map(true);
+        config.wasm_component_model_error_context(true);
         Engine::new(&config).expect("Failed to create engine")
     })
 }
@@ -47,6 +48,7 @@ pub fn async_engine() -> &'static Engine {
         config.wasm_component_model_async(true);
         config.wasm_component_model_async_stackful(true);
         config.wasm_component_model_map(true);
+        config.wasm_component_model_error_context(true);
         Engine::new(&config).expect("Failed to create async engine")
     })
 }

@@ -11,7 +11,9 @@ mod streams;
 mod tagged;
 mod task;
 mod trivia;
+mod webassembly;
 mod wit_imports;
+mod zwasm;
 
 use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::hash_map::DefaultHasher;

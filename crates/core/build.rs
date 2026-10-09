@@ -77,7 +77,12 @@ impl CargoProfile {
     }
 
     fn runtime_rustflags(&self, optimize_size: bool) -> String {
-        let flags = "-Clink-arg=-shared -Clink-arg=-Wl,--no-entry -Clink-arg=-Wl,--allow-undefined";
+        // A reactor is a core module with `dylink.0`, which `wasm-ld --shared`
+        // emits. wasm-component-ld would wrap that module as a component, and
+        // wit-component cannot extract linking metadata from a component.
+        // rustc prefixes a custom linker with `-flavor wasm`; the wrapper
+        // below strips that before invoking wasi-sdk wasm-ld.
+        let flags = "-Clink-arg=--shared -Clink-arg=--experimental-pic -Clink-arg=--no-entry -Clink-arg=--allow-undefined";
         match (self.release, optimize_size) {
             (true, true) => format!("{flags} -Clto=fat -Copt-level=z"),
             (true, false) => format!("{flags} -Clto=fat -Copt-level=3"),
@@ -162,8 +167,29 @@ fn main() -> Result<()> {
     let prebuilt_dir = manifest_dir.join("prebuilt");
     let prebuilt_sync = prebuilt_dir.join("runtime-sync.wasm");
 
-    if prebuilt_sync.exists() {
+    // Set COMPONENTIZE_QJS_REBUILD_RUNTIME=1 to link the runtime from source
+    // instead of the checked-in prebuilt. The prebuilt is what `cargo test` embeds.
+    let force_rebuild = env::var_os("COMPONENTIZE_QJS_REBUILD_RUNTIME").is_some();
+    if prebuilt_sync.exists() && !force_rebuild {
         return emit_from_prebuilt(&prebuilt_dir, async_on, &out_dir);
+    }
+    if force_rebuild && prebuilt_sync.exists() {
+        // Rebuild the default async runtime from source and keep the other
+        // checked-in variants. Tests use Runtime::Default.
+        let profile = CargoProfile::current();
+        let target_dirs = RuntimeTargetDirs::new(&out_dir);
+        let mut paths = RuntimePaths::default();
+        for (index, build) in RUNTIME_BUILDS.iter().copied().enumerate() {
+            if build.async_support && !async_on {
+                continue;
+            }
+            if build.name == "default" {
+                paths[index] = Some(build_runtime(&out_dir, &target_dirs, build, &profile)?);
+            } else {
+                paths[index] = Some(prebuilt_dir.join(build.filename));
+            }
+        }
+        return emit_runtime_wasms(&paths, &out_dir);
     }
 
     // Check that runtime source is available (won't be when installed from crates.io
@@ -268,6 +294,8 @@ fn build_runtime(
     let cflags = profile.runtime_cflags(optimize_size);
 
     let clang = executable(&wasi_sdk, "bin/clang");
+    let wasm_ld = executable(&wasi_sdk, "bin/wasm-ld");
+    let linker = wasm_ld_wrapper(out_dir, &wasm_ld)?;
     let target_dir = target_dirs.get(optimize_size);
     let mut cargo = Command::new("cargo");
     if env::var_os(RUNTIME_AUDITABLE_ENV).is_some() {
@@ -281,7 +309,7 @@ fn build_runtime(
         .arg("--no-default-features")
         .env("CARGO_TARGET_DIR", target_dir)
         .env(format!("CARGO_TARGET_{upcase}_RUSTFLAGS"), rustflags)
-        .env(format!("CARGO_TARGET_{upcase}_LINKER"), &clang)
+        .env(format!("CARGO_TARGET_{upcase}_LINKER"), &linker)
         .env(format!("CFLAGS_{}", target.replace('-', "_")), cflags)
         .env(format!("CC_{}", target.replace('-', "_")), &clang)
         .env("WASI_SDK_PATH", &wasi_sdk)
@@ -430,6 +458,25 @@ fn find_binaryen(target_dir: &Path) -> Option<PathBuf> {
         .ok()?
         .filter_map(Result::ok)
         .find(|entry| entry.is_dir() && executable(entry, "bin/wasm-opt").exists())
+}
+
+/// rustc invokes a custom linker as `linker -flavor wasm ...`. wasi-sdk
+/// `wasm-ld` rejects `-flavor`, so drop that pair and forward the rest.
+fn wasm_ld_wrapper(out_dir: &Path, wasm_ld: &Path) -> Result<PathBuf> {
+    let path = out_dir.join("wasm-ld-no-flavor.sh");
+    let script = format!(
+        "#!/bin/sh\nif [ \"$1\" = \"-flavor\" ]; then shift 2; fi\nexec {} \"$@\"\n",
+        wasm_ld.display()
+    );
+    fs::write(&path, script).context("Failed to write wasm-ld wrapper")?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&path)?.permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&path, perms)?;
+    }
+    Ok(path)
 }
 
 fn executable(root: &Path, relative: &str) -> PathBuf {
