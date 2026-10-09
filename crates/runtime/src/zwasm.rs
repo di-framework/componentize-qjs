@@ -172,8 +172,8 @@ unsafe extern "C" {
     );
 }
 
-/// One host function kept until the store is dropped. This runtime never drops
-/// the store: it lives with the component.
+/// One host function. The slot is reused once every JS value that can call it
+/// has been collected. The store itself is never dropped.
 pub(crate) struct HostFunc {
     pub js: Persistent<Function<'static>>,
     pub params: Vec<u8>,
@@ -200,7 +200,7 @@ struct Growth {
 
 struct EngineHost {
     store: *mut wasm_store_t,
-    host_funcs: Vec<HostFunc>,
+    host_funcs: Vec<Option<HostFunc>>,
     guest_funcs: Vec<GuestFunc>,
     memories: Vec<MemState>,
     /// Modules, instances, and copied handles kept for the store lifetime.
@@ -283,11 +283,25 @@ pub(crate) fn retain(ptr: *mut c_void) {
     }
 }
 
-pub(crate) fn push_host_func(func: HostFunc) -> usize {
+/// At most one host function per trampoline. Returns the slot, or `None` when
+/// all 32 are still held by a reachable instance.
+pub(crate) fn alloc_host_func(func: HostFunc) -> Result<usize, HostFunc> {
     let mut host = HOST.0.borrow_mut();
-    let id = host.host_funcs.len();
-    host.host_funcs.push(func);
-    id
+    if let Some(id) = host.host_funcs.iter().position(|slot| slot.is_none()) {
+        host.host_funcs[id] = Some(func);
+        return Ok(id);
+    }
+    if host.host_funcs.len() >= HOST_TRAMPOLINES.len() {
+        return Err(func);
+    }
+    host.host_funcs.push(Some(func));
+    Ok(host.host_funcs.len() - 1)
+}
+
+pub(crate) fn release_host_func(id: usize) {
+    if let Some(slot) = HOST.0.borrow_mut().host_funcs.get_mut(id) {
+        *slot = None;
+    }
 }
 
 pub(crate) fn push_guest_func(func: GuestFunc) -> usize {
@@ -411,32 +425,69 @@ pub(crate) fn make_functype(params: &[u8], results: &[u8]) -> Result<*mut wasm_f
     }
 }
 
-fn js_to_val(value: &Value<'_>, kind: u8) -> Result<wasm_val_t, ()> {
-    let number = value
-        .as_float()
-        .or_else(|| value.as_int().map(|n| n as f64));
-    let Some(number) = number else {
-        return Err(());
-    };
+fn clear_exception(ctx: &Ctx<'_>) {
+    unsafe {
+        let exc = rquickjs::qjs::JS_GetException(ctx.as_raw().as_ptr());
+        rquickjs::qjs::JS_FreeValue(ctx.as_raw().as_ptr(), exc);
+    }
+}
+
+fn js_to_val(ctx: &Ctx<'_>, value: &Value<'_>, kind: u8) -> Result<wasm_val_t, ()> {
     let mut slot = wasm_val_t {
         kind,
         of: wasm_val_union { i64_: 0 },
     };
     match kind {
-        WASM_I32 => slot.of.i32_ = number as i32,
-        WASM_I64 => slot.of.i64_ = number as i64,
-        WASM_F32 => slot.of.f32_ = number as f32,
-        WASM_F64 => slot.of.f64_ = number,
+        WASM_I32 => {
+            // ToInt32: wrap modulo 2^32. `as i32` would saturate instead.
+            let mut out = 0i32;
+            let rc = unsafe {
+                rquickjs::qjs::JS_ToInt32(ctx.as_raw().as_ptr(), &mut out, value.as_raw())
+            };
+            if rc != 0 {
+                clear_exception(ctx);
+                return Err(());
+            }
+            slot.of.i32_ = out;
+        }
+        WASM_I64 => {
+            // ToBigInt64: BigInt only, wrap modulo 2^64.
+            let mut out = 0i64;
+            let rc = unsafe {
+                rquickjs::qjs::JS_ToBigInt64(ctx.as_raw().as_ptr(), &mut out, value.as_raw())
+            };
+            if rc != 0 {
+                clear_exception(ctx);
+                return Err(());
+            }
+            slot.of.i64_ = out;
+        }
+        WASM_F32 | WASM_F64 => {
+            let number = value
+                .as_float()
+                .or_else(|| value.as_int().map(|n| n as f64));
+            let Some(number) = number else {
+                return Err(());
+            };
+            if kind == WASM_F32 {
+                slot.of.f32_ = number as f32;
+            } else {
+                slot.of.f64_ = number;
+            }
+        }
         _ => return Err(()),
     }
     Ok(slot)
 }
 
 fn val_to_js<'js>(ctx: &Ctx<'js>, val: &wasm_val_t) -> rquickjs::Result<Value<'js>> {
+    if val.kind == WASM_I64 {
+        let bits = unsafe { val.of.i64_ };
+        return rquickjs::BigInt::from_i64(ctx.clone(), bits).map(|bigint| bigint.into_value());
+    }
     let number = unsafe {
         match val.kind {
             WASM_I32 => val.of.i32_ as f64,
-            WASM_I64 => val.of.i64_ as f64,
             WASM_F32 => val.of.f32_ as f64,
             WASM_F64 => val.of.f64_,
             _ => {
@@ -491,7 +542,10 @@ fn dispatch_host(
 ) -> *mut wasm_trap_t {
     let (js, params, result_kinds) = {
         let host = HOST.0.borrow();
-        let func = &host.host_funcs[index];
+        let func = host.host_funcs.get(index).and_then(|slot| slot.as_ref());
+        let Some(func) = func else {
+            return new_trap("host function was collected");
+        };
         (func.js.clone(), func.params.clone(), func.results.clone())
     };
     crate::with_ctx(|ctx| call_host_js(ctx, js, &params, &result_kinds, args, results))
@@ -546,7 +600,7 @@ fn call_host_js(
                 items
             };
             for (i, &kind) in result_kinds.iter().enumerate() {
-                let slot = js_to_val(&values[i], kind).map_err(|_| ())?;
+                let slot = js_to_val(ctx, &values[i], kind).map_err(|_| ())?;
                 let dst = &mut *(*results).data.add(i);
                 dst.kind = slot.kind;
                 dst.of = slot.of;
@@ -599,17 +653,40 @@ pub(crate) fn remember_buffer(id: usize, buffer: Persistent<Value<'static>>) {
 }
 
 pub(crate) fn memories_matching(instance_id: u64, memory_index: u32) -> Vec<usize> {
-    HOST.0
-        .borrow()
+    let host = HOST.0.borrow();
+    // Two export names can refer to one memory. The growth hook reports the
+    // module index once, so also match copies that share that data pointer.
+    let anchors: Vec<*mut u8> = host
         .memories
         .iter()
+        .filter(|mem| mem.instance_id == instance_id && mem.memory_index == memory_index)
+        .map(|mem| unsafe { wasm_memory_data(mem.memory) })
+        .collect();
+    host.memories
+        .iter()
         .enumerate()
-        .filter(|(_, mem)| mem.instance_id == instance_id && mem.memory_index == memory_index)
+        .filter(|(_, mem)| {
+            if mem.instance_id != instance_id {
+                return false;
+            }
+            if mem.memory_index == memory_index {
+                return true;
+            }
+            let data = unsafe { wasm_memory_data(mem.memory) };
+            anchors.contains(&data)
+        })
         .map(|(i, _)| i)
         .collect()
 }
 
+/// `getpid` is the one libc symbol the interpreter archive does not define.
+#[unsafe(no_mangle)]
+extern "C" fn getpid() -> i32 {
+    1
+}
+
 pub(crate) fn call_guest(
+    ctx: &Ctx<'_>,
     func: *mut wasm_func_t,
     params: &[u8],
     results: &[u8],
@@ -620,8 +697,10 @@ pub(crate) fn call_guest(
     }
     let mut arg_slots = Vec::with_capacity(params.len());
     for (value, &kind) in args.iter().zip(params) {
-        arg_slots
-            .push(js_to_val(value, kind).map_err(|_| "wasm argument is not a number".to_string())?);
+        arg_slots.push(js_to_val(ctx, value, kind).map_err(|_| match kind {
+            WASM_I64 => "wasm i64 argument must be a BigInt".to_string(),
+            _ => "wasm argument is not a number".to_string(),
+        })?);
     }
     let mut result_slots = vec![
         wasm_val_t {

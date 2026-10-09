@@ -2,16 +2,50 @@
 
 use std::ptr;
 
+use rquickjs::class::{Class, JsClass, Trace};
 use rquickjs::function::Rest;
-use rquickjs::{ArrayBuffer, Ctx, Exception, Function, Object, Value};
+use rquickjs::{ArrayBuffer, Ctx, Exception, Function, JsLifetime, Object, Persistent, Value};
 
 use crate::zwasm::{
     self, GuestFunc, HostFunc, MemState, WASM_EXTERN_FUNC, WASM_EXTERN_MEMORY, wasm_byte_vec_t,
     wasm_exporttype_vec_t, wasm_extern_vec_t, wasm_importtype_vec_t,
 };
 
+/// Slots borrowed by one instantiate. Dropped when the instance object and
+/// every export function copied out of it have been collected, which returns
+/// the trampolines to the pool of 32.
+#[derive(Trace, JsLifetime)]
+struct ImportSlots {
+    #[qjs(skip_trace)]
+    slots: Vec<usize>,
+}
+
+impl Drop for ImportSlots {
+    fn drop(&mut self) {
+        for slot in self.slots.drain(..) {
+            zwasm::release_host_func(slot);
+        }
+    }
+}
+
+impl<'js> JsClass<'js> for ImportSlots {
+    const NAME: &'static str = "WasmImportSlots";
+    type Mutable = rquickjs::class::Readable;
+
+    fn prototype(_ctx: &Ctx<'js>) -> rquickjs::Result<Option<Object<'js>>> {
+        Ok(None)
+    }
+
+    fn constructor(
+        _ctx: &Ctx<'js>,
+    ) -> rquickjs::Result<Option<rquickjs::function::Constructor<'js>>> {
+        Ok(None)
+    }
+}
+
 pub(crate) fn register<'js>(ctx: &Ctx<'js>) -> rquickjs::Result<()> {
     zwasm::ensure_engine();
+    Class::<ImportSlots>::define(&ctx.globals())?;
 
     let memory_proto = Object::new(ctx.clone())?;
     let memory_ctor = Function::new(ctx.clone(), |ctx: Ctx<'_>, _args: Rest<Value<'_>>| {
@@ -58,11 +92,12 @@ fn instantiate<'js>(ctx: &Ctx<'js>, args: Rest<Value<'js>>) -> rquickjs::Result<
     }
     zwasm::retain(module.cast());
 
-    let imports = link_imports(ctx, module, import_object)?;
+    let mut imports = link_imports(ctx, module, import_object)?;
     let mut trap = ptr::null_mut();
     let instance =
         unsafe { zwasm::wasm_instance_new(zwasm::store(), module, &imports.vec, &mut trap) };
     if instance.is_null() {
+        imports.release_slots();
         let message = if trap.is_null() {
             "WebAssembly.instantiate failed".to_string()
         } else {
@@ -72,15 +107,19 @@ fn instantiate<'js>(ctx: &Ctx<'js>, args: Rest<Value<'js>>) -> rquickjs::Result<
     }
     zwasm::retain(instance.cast());
     let instance_id = zwasm::last_instance_id();
+    let slots = imports.take_slots();
+    let keeper = Class::instance(ctx.clone(), ImportSlots { slots })?;
+    let alive = Persistent::save(ctx, keeper.clone());
 
     let wasm_ns: Object = ctx.globals().get("WebAssembly")?;
     let memory_ctor: Object = wasm_ns.get("Memory")?;
     let memory_proto: Object = memory_ctor.get("prototype")?;
-    let exports = export_object(ctx, &memory_proto, module, instance, instance_id)?;
+    let exports = export_object(ctx, &memory_proto, module, instance, instance_id, alive)?;
     apply_growths(ctx)?;
 
     let instance_obj = Object::new(ctx.clone())?;
     instance_obj.set("exports", exports)?;
+    instance_obj.set("__cqjs_host_imports", keeper)?;
     let module_obj = Object::new(ctx.clone())?;
     let out = Object::new(ctx.clone())?;
     out.set("instance", instance_obj)?;
@@ -92,7 +131,48 @@ struct ImportLink {
     vec: wasm_extern_vec_t,
     // Owns the pointer buffer `vec.data` references for the duration of instantiate.
     #[allow(dead_code)]
-    slots: Vec<*mut zwasm::wasm_extern_t>,
+    externs: Vec<*mut zwasm::wasm_extern_t>,
+    host_slots: Vec<usize>,
+}
+
+impl ImportLink {
+    fn take_slots(&mut self) -> Vec<usize> {
+        std::mem::take(&mut self.host_slots)
+    }
+
+    fn release_slots(&mut self) {
+        for slot in self.host_slots.drain(..) {
+            zwasm::release_host_func(slot);
+        }
+    }
+}
+
+impl Drop for ImportLink {
+    fn drop(&mut self) {
+        self.release_slots();
+    }
+}
+
+struct SlotGuard(Vec<usize>);
+
+impl Drop for SlotGuard {
+    fn drop(&mut self) {
+        for slot in self.0.drain(..) {
+            zwasm::release_host_func(slot);
+        }
+    }
+}
+
+fn alloc_host_slot(ctx: &Ctx<'_>, func: HostFunc) -> rquickjs::Result<usize> {
+    let func = match zwasm::alloc_host_func(func) {
+        Ok(slot) => return Ok(slot),
+        Err(func) => func,
+    };
+    // Unreachable instances from earlier instantiate calls still hold slots
+    // until their JS objects are collected.
+    ctx.run_gc();
+    zwasm::alloc_host_func(func)
+        .map_err(|_| Exception::throw_message(ctx, "too many function imports for one store"))
 }
 
 fn link_imports<'js>(
@@ -112,7 +192,8 @@ fn link_imports<'js>(
                     size: 0,
                     data: ptr::null_mut(),
                 },
-                slots: Vec::new(),
+                externs: Vec::new(),
+                host_slots: Vec::new(),
             });
         }
         let import_object = import_object.ok_or_else(|| {
@@ -124,7 +205,8 @@ fn link_imports<'js>(
                 "WebAssembly.instantiate: import object must be an object",
             )
         })?;
-        let mut slots = Vec::with_capacity(import_types.size);
+        let mut externs = Vec::with_capacity(import_types.size);
+        let mut host_slots = SlotGuard(Vec::with_capacity(import_types.size));
         for i in 0..import_types.size {
             let ty = unsafe { *import_types.data.add(i) };
             let module_name = zwasm::name_bytes(unsafe { zwasm::wasm_importtype_module(ty) });
@@ -152,11 +234,14 @@ fn link_imports<'js>(
             let functype = unsafe { zwasm::wasm_externtype_as_functype(extern_ty as *mut _) };
             let params = zwasm::valtype_kinds(unsafe { zwasm::wasm_functype_params(functype) });
             let results = zwasm::valtype_kinds(unsafe { zwasm::wasm_functype_results(functype) });
-            let slot = zwasm::push_host_func(HostFunc {
-                js: rquickjs::Persistent::save(ctx, function),
-                params: params.clone(),
-                results: results.clone(),
-            });
+            let slot = alloc_host_slot(
+                ctx,
+                HostFunc {
+                    js: Persistent::save(ctx, function),
+                    params: params.clone(),
+                    results: results.clone(),
+                },
+            )?;
             let callback =
                 zwasm::host_trampoline(slot).map_err(|err| Exception::throw_message(ctx, &err))?;
             let owned = zwasm::make_functype(&params, &results)
@@ -171,13 +256,18 @@ fn link_imports<'js>(
             if ext.is_null() {
                 return Err(Exception::throw_message(ctx, "wasm_func_as_extern failed"));
             }
-            slots.push(ext);
+            externs.push(ext);
+            host_slots.0.push(slot);
         }
         let vec = wasm_extern_vec_t {
-            size: slots.len(),
-            data: slots.as_mut_ptr(),
+            size: externs.len(),
+            data: externs.as_mut_ptr(),
         };
-        Ok(ImportLink { vec, slots })
+        Ok(ImportLink {
+            vec,
+            externs,
+            host_slots: std::mem::take(&mut host_slots.0),
+        })
     })();
     unsafe {
         if !import_types.data.is_null() {
@@ -193,6 +283,7 @@ fn export_object<'js>(
     module: *mut zwasm::wasm_module_t,
     instance: *mut zwasm::wasm_instance_t,
     instance_id: u64,
+    alive: Persistent<Class<'static, ImportSlots>>,
 ) -> rquickjs::Result<Object<'js>> {
     let mut export_types = wasm_exporttype_vec_t {
         size: 0,
@@ -230,8 +321,10 @@ fn export_object<'js>(
                     params,
                     results,
                 });
+                let alive = alive.clone();
                 let js =
                     Function::new(ctx.clone(), move |ctx: Ctx<'js>, args: Rest<Value<'js>>| {
+                        let _alive = &alive;
                         call_export(&ctx, id, &args.0)
                     })?;
                 obj.set(name, js)?;
@@ -288,7 +381,7 @@ fn call_export<'js>(
     args: &[Value<'js>],
 ) -> rquickjs::Result<Value<'js>> {
     let guest = zwasm::guest_func(id);
-    let called = zwasm::call_guest(guest.func, &guest.params, &guest.results, args);
+    let called = zwasm::call_guest(ctx, guest.func, &guest.params, &guest.results, args);
     apply_growths(ctx)?;
     match called {
         Ok(values) => zwasm::result_to_js(ctx, &values),

@@ -15,6 +15,15 @@ const ADD: &str = "new Uint8Array([0,97,115,109,1,0,0,0,1,11,2,96,2,127,127,1,12
 /// One page of memory, exported as `mem`, and `grow` which grows one page.
 const MEM: &str = "new Uint8Array([0,97,115,109,1,0,0,0,1,5,1,96,0,1,127,3,2,1,0,5,3,1,0,1,7,14,2,3,109,101,109,2,0,4,103,114,111,119,0,0,10,8,1,6,0,65,1,64,0,11])";
 
+/// `(func (export "id") (param i32) (result i32) local.get 0)`.
+const ID_I32: &str = "new Uint8Array([0,97,115,109,1,0,0,0,1,6,1,96,1,127,1,127,3,2,1,0,7,6,1,2,105,100,0,0,10,6,1,4,0,32,0,11])";
+
+/// `(func (export "id") (param i64) (result i64) local.get 0)`.
+const ID_I64: &str = "new Uint8Array([0,97,115,109,1,0,0,0,1,6,1,96,1,126,1,126,3,2,1,0,7,6,1,2,105,100,0,0,10,6,1,4,0,32,0,11])";
+
+/// One memory exported as both `a` and `b`, plus `grow` of one page.
+const MEM_ALIAS: &str = "new Uint8Array([0,97,115,109,1,0,0,0,1,5,1,96,0,1,127,3,2,1,0,5,3,1,0,1,7,16,3,1,97,2,0,1,98,2,0,4,103,114,111,119,0,0,10,8,1,6,0,65,1,64,0,11])";
+
 fn wit_answer() -> &'static str {
     "package test:wasm;\nworld wasm { export answer: func() -> u32; }\n"
 }
@@ -75,6 +84,63 @@ fn missing_or_mistyped_import_is_catchable() {
          }}"
     );
     assert_eq!(run_js(&js), 2);
+}
+
+#[test]
+fn repeated_instantiate_reuses_host_import_slots() {
+    let js = format!(
+        "const bytes = {ADD};
+         export function answer() {{
+           for (let i = 0; i < 40; i++) {{
+             const {{ instance }} = WebAssembly.instantiate(bytes, {{
+               env: {{ add(a, b) {{ return a + b; }} }}
+             }});
+             if (instance.exports.main() !== 42) return 1;
+           }}
+           return 0;
+         }}"
+    );
+    assert_eq!(run_js(&js), 0);
+}
+
+#[test]
+fn i32_arguments_wrap_and_i64_is_bigint() {
+    let js = format!(
+        "const i32bytes = {ID_I32};
+         const i64bytes = {ID_I64};
+         export function answer() {{
+           const i32 = WebAssembly.instantiate(i32bytes, {{}}).instance.exports.id;
+           if (i32(4294967295) !== -1) return 1;
+           if (i32(2147483648) !== -2147483648) return 2;
+           if (i32(NaN) !== 0) return 3;
+           const i64 = WebAssembly.instantiate(i64bytes, {{}}).instance.exports.id;
+           if (i64(1n) !== 1n) return 4;
+           if (i64(9223372036854775808n) !== -9223372036854775808n) return 5;
+           return 0;
+         }}"
+    );
+    assert_eq!(run_js(&js), 0);
+}
+
+#[test]
+fn aliased_memory_export_detaches_both_buffers() {
+    let js = format!(
+        "const bytes = {MEM_ALIAS};
+         export function answer() {{
+           const {{ instance }} = WebAssembly.instantiate(bytes, {{}});
+           const first = instance.exports.a.buffer;
+           const second = instance.exports.b.buffer;
+           new Uint8Array(first)[0] = 0x5a;
+           instance.exports.grow();
+           if (first.byteLength !== 0) return 1;
+           if (second.byteLength !== 0) return 2;
+           const view = new Uint8Array(instance.exports.b.buffer);
+           if (view.byteLength !== 131072) return 3;
+           if (view[0] !== 0x5a) return 4;
+           return 0;
+         }}"
+    );
+    assert_eq!(run_js(&js), 0);
 }
 
 #[test]
