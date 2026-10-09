@@ -38,16 +38,16 @@ using npm OIDC (no token).
 
 | Version | Dist-tag | Contents |
 | --- | --- | --- |
-| `0.4.4-di.3` | `di` | JS wrapper |
-| `0.4.4-di.3-darwin-arm64` | `di-darwin-arm64` | native CLI |
-| `0.4.4-di.3-darwin-x64` | `di-darwin-x64` | native CLI |
-| `0.4.4-di.3-linux-x64` | `di-linux-x64` | native CLI |
-| `0.4.4-di.3-linux-arm64` | `di-linux-arm64` | native CLI |
-| `0.4.4-di.3-win32-x64` | `di-win32-x64` | native CLI |
+| `0.4.4-di.4` | `di` | JS wrapper |
+| `0.4.4-di.4-darwin-arm64` | `di-darwin-arm64` | native CLI |
+| `0.4.4-di.4-darwin-x64` | `di-darwin-x64` | native CLI |
+| `0.4.4-di.4-linux-x64` | `di-linux-x64` | native CLI |
+| `0.4.4-di.4-linux-arm64` | `di-linux-arm64` | native CLI |
+| `0.4.4-di.4-win32-x64` | `di-win32-x64` | native CLI |
 
 npm cannot install two versions of the same package as optional dependencies, so
 the wrapper aliases each native version into an unscoped folder
-(`componentize-qjs-darwin-arm64`: `npm:@di-framework/componentize-qjs@0.4.4-di.3-darwin-arm64`)
+(`componentize-qjs-darwin-arm64`: `npm:@di-framework/componentize-qjs@0.4.4-di.4-darwin-arm64`)
 and each tarball's `os` / `cpu` fields skip the wrong machine.
 
 On npmjs.com, the trusted publisher for `@di-framework/componentize-qjs` is:

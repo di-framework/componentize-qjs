@@ -1,6 +1,6 @@
 {
   "name": "@di-framework/componentize-qjs",
-  "version": "0.4.4-di.3-darwin-arm64",
+  "version": "0.4.4-di.4-darwin-arm64",
   "description": "darwin arm64 CLI for @di-framework/componentize-qjs",
   "license": "Apache-2.0",
   "repository": {
