@@ -123,8 +123,10 @@ unsafe extern "C" {
     pub fn wasm_memory_data_size(memory: *const wasm_memory_t) -> usize;
     pub fn wasm_trap_delete(trap: *mut wasm_trap_t);
     pub fn wasm_trap_message(trap: *const wasm_trap_t, out: *mut wasm_byte_vec_t);
-    pub fn wasm_trap_new(store: *mut wasm_store_t, message: *const wasm_byte_vec_t)
-        -> *mut wasm_trap_t;
+    pub fn wasm_trap_new(
+        store: *mut wasm_store_t,
+        message: *const wasm_byte_vec_t,
+    ) -> *mut wasm_trap_t;
     pub fn wasm_byte_vec_delete(vec: *mut wasm_byte_vec_t);
     pub fn wasm_extern_vec_delete(vec: *mut wasm_extern_vec_t);
     pub fn wasm_module_imports(module: *const wasm_module_t, out: *mut wasm_importtype_vec_t);
@@ -410,7 +412,9 @@ pub(crate) fn make_functype(params: &[u8], results: &[u8]) -> Result<*mut wasm_f
 }
 
 fn js_to_val(value: &Value<'_>, kind: u8) -> Result<wasm_val_t, ()> {
-    let number = value.as_float().or_else(|| value.as_int().map(|n| n as f64));
+    let number = value
+        .as_float()
+        .or_else(|| value.as_int().map(|n| n as f64));
     let Some(number) = number else {
         return Err(());
     };
@@ -513,16 +517,7 @@ fn call_host_js(
             }
             for (i, &kind) in params.iter().enumerate() {
                 let slot = &*(*args).data.add(i);
-                js_args.push(
-                    val_to_js(
-                        ctx,
-                        &wasm_val_t {
-                            kind,
-                            of: slot.of,
-                        },
-                    )
-                    .map_err(|_| ())?,
-                );
+                js_args.push(val_to_js(ctx, &wasm_val_t { kind, of: slot.of }).map_err(|_| ())?);
             }
         }
         let mut call_args = Args::new(ctx.clone(), js_args.len());
@@ -625,7 +620,8 @@ pub(crate) fn call_guest(
     }
     let mut arg_slots = Vec::with_capacity(params.len());
     for (value, &kind) in args.iter().zip(params) {
-        arg_slots.push(js_to_val(value, kind).map_err(|_| "wasm argument is not a number".to_string())?);
+        arg_slots
+            .push(js_to_val(value, kind).map_err(|_| "wasm argument is not a number".to_string())?);
     }
     let mut result_slots = vec![
         wasm_val_t {
@@ -662,7 +658,10 @@ pub(crate) fn call_guest(
     Ok(result_slots)
 }
 
-pub(crate) fn result_to_js<'js>(ctx: &Ctx<'js>, values: &[wasm_val_t]) -> rquickjs::Result<Value<'js>> {
+pub(crate) fn result_to_js<'js>(
+    ctx: &Ctx<'js>,
+    values: &[wasm_val_t],
+) -> rquickjs::Result<Value<'js>> {
     if values.is_empty() {
         return Ok(Value::new_undefined(ctx.clone()));
     }

@@ -27,10 +27,9 @@ pub(crate) fn register<'js>(ctx: &Ctx<'js>) -> rquickjs::Result<()> {
     wasm.set("Memory", memory_ctor)?;
     wasm.set(
         "instantiate",
-        Function::new(
-            ctx.clone(),
-            |ctx: Ctx<'js>, args: Rest<Value<'js>>| instantiate(&ctx, args),
-        )?,
+        Function::new(ctx.clone(), |ctx: Ctx<'js>, args: Rest<Value<'js>>| {
+            instantiate(&ctx, args)
+        })?,
     )?;
     ctx.globals().set("WebAssembly", wasm)?;
     Ok(())
@@ -61,17 +60,13 @@ fn instantiate<'js>(ctx: &Ctx<'js>, args: Rest<Value<'js>>) -> rquickjs::Result<
 
     let imports = link_imports(ctx, module, import_object)?;
     let mut trap = ptr::null_mut();
-    let instance = unsafe {
-        zwasm::wasm_instance_new(zwasm::store(), module, &imports.vec, &mut trap)
-    };
+    let instance =
+        unsafe { zwasm::wasm_instance_new(zwasm::store(), module, &imports.vec, &mut trap) };
     if instance.is_null() {
         let message = if trap.is_null() {
             "WebAssembly.instantiate failed".to_string()
         } else {
-            format!(
-                "WebAssembly.instantiate failed: {}",
-                zwasm::trap_text(trap)
-            )
+            format!("WebAssembly.instantiate failed: {}", zwasm::trap_text(trap))
         };
         return Err(Exception::throw_message(ctx, &message));
     }
@@ -124,7 +119,10 @@ fn link_imports<'js>(
             Exception::throw_type(ctx, "WebAssembly.instantiate: missing import object")
         })?;
         let import_object = import_object.into_object().ok_or_else(|| {
-            Exception::throw_type(ctx, "WebAssembly.instantiate: import object must be an object")
+            Exception::throw_type(
+                ctx,
+                "WebAssembly.instantiate: import object must be an object",
+            )
         })?;
         let mut slots = Vec::with_capacity(import_types.size);
         for i in 0..import_types.size {
@@ -140,16 +138,10 @@ fn link_imports<'js>(
                 ));
             }
             let module_obj: Object = import_object.get(&module_name).map_err(|_| {
-                Exception::throw_type(
-                    ctx,
-                    &format!("missing import module {module_name}"),
-                )
+                Exception::throw_type(ctx, &format!("missing import module {module_name}"))
             })?;
             let value: Value = module_obj.get(&import_name).map_err(|_| {
-                Exception::throw_type(
-                    ctx,
-                    &format!("missing import {module_name}.{import_name}"),
-                )
+                Exception::throw_type(ctx, &format!("missing import {module_name}.{import_name}"))
             })?;
             let function = value.into_function().ok_or_else(|| {
                 Exception::throw_type(
@@ -165,7 +157,8 @@ fn link_imports<'js>(
                 params: params.clone(),
                 results: results.clone(),
             });
-            let callback = zwasm::host_trampoline(slot).map_err(|err| Exception::throw_message(ctx, &err))?;
+            let callback =
+                zwasm::host_trampoline(slot).map_err(|err| Exception::throw_message(ctx, &err))?;
             let owned = zwasm::make_functype(&params, &results)
                 .map_err(|err| Exception::throw_message(ctx, &err))?;
             let func = unsafe { zwasm::wasm_func_new(zwasm::store(), owned, callback) };
@@ -237,9 +230,10 @@ fn export_object<'js>(
                     params,
                     results,
                 });
-                let js = Function::new(ctx.clone(), move |ctx: Ctx<'js>, args: Rest<Value<'js>>| {
-                    call_export(&ctx, id, &args.0)
-                })?;
+                let js =
+                    Function::new(ctx.clone(), move |ctx: Ctx<'js>, args: Rest<Value<'js>>| {
+                        call_export(&ctx, id, &args.0)
+                    })?;
                 obj.set(name, js)?;
             } else if kind == WASM_EXTERN_MEMORY {
                 let memory = unsafe { zwasm::wasm_extern_as_memory(ext) };
@@ -265,9 +259,11 @@ fn export_object<'js>(
                 }
                 mem_obj.prop(
                     "buffer",
-                    rquickjs::object::Accessor::from(move |ctx: Ctx<'js>| -> rquickjs::Result<Value<'js>> {
-                        current_buffer(&ctx, id)
-                    })
+                    rquickjs::object::Accessor::from(
+                        move |ctx: Ctx<'js>| -> rquickjs::Result<Value<'js>> {
+                            current_buffer(&ctx, id)
+                        },
+                    )
                     .enumerable(),
                 )?;
                 obj.set(name, mem_obj)?;
@@ -286,7 +282,11 @@ fn export_object<'js>(
     result
 }
 
-fn call_export<'js>(ctx: &Ctx<'js>, id: usize, args: &[Value<'js>]) -> rquickjs::Result<Value<'js>> {
+fn call_export<'js>(
+    ctx: &Ctx<'js>,
+    id: usize,
+    args: &[Value<'js>],
+) -> rquickjs::Result<Value<'js>> {
     let guest = zwasm::guest_func(id);
     let called = zwasm::call_guest(guest.func, &guest.params, &guest.results, args);
     apply_growths(ctx)?;
@@ -323,7 +323,10 @@ fn publish_buffer<'js>(ctx: &Ctx<'js>, id: usize) -> rquickjs::Result<Value<'js>
         )
     };
     if raw >> 32 == rquickjs::qjs::JS_TAG_EXCEPTION as u64 {
-        return Err(Exception::throw_message(ctx, "failed to publish wasm memory buffer"));
+        return Err(Exception::throw_message(
+            ctx,
+            "failed to publish wasm memory buffer",
+        ));
     }
     let value = unsafe { Value::from_raw(ctx.clone(), raw) };
     zwasm::remember_buffer(id, rquickjs::Persistent::save(ctx, value.clone()));
@@ -385,7 +388,9 @@ fn buffer_source(ctx: &Ctx<'_>, value: Value<'_>) -> rquickjs::Result<Vec<u8>> {
                 "WebAssembly.instantiate: view exceeds its buffer",
             ));
         }
-        return Ok(unsafe { std::slice::from_raw_parts(raw.ptr.as_ptr().add(offset), length).to_vec() });
+        return Ok(unsafe {
+            std::slice::from_raw_parts(raw.ptr.as_ptr().add(offset), length).to_vec()
+        });
     }
     Err(Exception::throw_type(
         ctx,

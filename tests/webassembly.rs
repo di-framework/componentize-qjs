@@ -31,11 +31,7 @@ fn run_js(js: &str) -> u32 {
 
 #[test]
 fn guest_without_wasm_import_still_runs() {
-    let (output, _dir) = run_cli_build(
-        wit_answer(),
-        "export function answer() { return 7; }",
-        &[],
-    );
+    let (output, _dir) = run_cli_build(wit_answer(), "export function answer() { return 7; }", &[]);
     let wasm = fs::read(&output).unwrap();
     let mut inst = ComponentInstance::from_wasm(wasm, vec![], vec![]).unwrap();
     assert_eq!(inst.call1("answer", &[]), Val::U32(7));
@@ -112,7 +108,8 @@ fn vendored_wasm_pqc_subtle_init_returns_callable_export() {
     let pkg = dir.path().join("node_modules").join("wasm-pqc-subtle");
     fs::create_dir_all(&src).unwrap();
     fs::create_dir_all(&pkg).unwrap();
-    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/wasm-pqc-subtle");
+    let fixture =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/wasm-pqc-subtle");
     fs::copy(fixture.join("package.json"), pkg.join("package.json")).unwrap();
     fs::copy(fixture.join("index.js"), pkg.join("index.js")).unwrap();
     fs::write(
