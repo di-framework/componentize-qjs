@@ -238,6 +238,7 @@ async fn wizer_init(
     config.wasm_component_model(true);
     config.wasm_component_model_async(true);
     config.wasm_component_model_map(true);
+    config.wasm_component_model_implements(true);
     // rustc 1.97's wasip2 std emits `error-context.new` in the reactor.
     config.wasm_component_model_error_context(true);
     config.concurrency_support(true);

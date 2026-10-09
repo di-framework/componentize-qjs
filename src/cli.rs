@@ -65,6 +65,21 @@ pub struct CliArgs {
 
 /// Run the componentize-qjs CLI with the given arguments.
 pub async fn run(args: Vec<String>) -> Result<()> {
+    if args.first().map(String::as_str) == Some("compose") {
+        #[derive(Parser)]
+        struct ComposeArgs {
+            input: std::path::PathBuf,
+            #[arg(long = "definition", required = true)]
+            definitions: Vec<std::path::PathBuf>,
+            #[arg(short, long)]
+            output: std::path::PathBuf,
+        }
+        let args = ComposeArgs::try_parse_from(args)?;
+        let composed =
+            componentize_qjs::stubwasi::compose_with_definitions(&args.input, args.definitions)?;
+        fs::write(args.output, composed)?;
+        return Ok(());
+    }
     let args =
         CliArgs::try_parse_from(std::iter::once("componentize-qjs".to_string()).chain(args))?;
 

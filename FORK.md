@@ -38,16 +38,16 @@ using npm OIDC (no token).
 
 | Version | Dist-tag | Contents |
 | --- | --- | --- |
-| `0.4.4-di.2` | `di` | JS wrapper |
-| `0.4.4-di.2-darwin-arm64` | `di-darwin-arm64` | native CLI |
-| `0.4.4-di.2-darwin-x64` | `di-darwin-x64` | native CLI |
-| `0.4.4-di.2-linux-x64` | `di-linux-x64` | native CLI |
-| `0.4.4-di.2-linux-arm64` | `di-linux-arm64` | native CLI |
-| `0.4.4-di.2-win32-x64` | `di-win32-x64` | native CLI |
+| `0.4.4-di.3` | `di` | JS wrapper |
+| `0.4.4-di.3-darwin-arm64` | `di-darwin-arm64` | native CLI |
+| `0.4.4-di.3-darwin-x64` | `di-darwin-x64` | native CLI |
+| `0.4.4-di.3-linux-x64` | `di-linux-x64` | native CLI |
+| `0.4.4-di.3-linux-arm64` | `di-linux-arm64` | native CLI |
+| `0.4.4-di.3-win32-x64` | `di-win32-x64` | native CLI |
 
 npm cannot install two versions of the same package as optional dependencies, so
 the wrapper aliases each native version into an unscoped folder
-(`componentize-qjs-darwin-arm64`: `npm:@di-framework/componentize-qjs@0.4.4-di.2-darwin-arm64`)
+(`componentize-qjs-darwin-arm64`: `npm:@di-framework/componentize-qjs@0.4.4-di.3-darwin-arm64`)
 and each tarball's `os` / `cpu` fields skip the wrong machine.
 
 On npmjs.com, the trusted publisher for `@di-framework/componentize-qjs` is:
@@ -70,3 +70,15 @@ nativeCliPath(); // absolute path, or undefined if the platform package is missi
 
 Please prefer a patch on `andreiltd/componentize-qjs` once they bump wasmtime.
 This fork should then be retired.
+
+## Named imports (di.3)
+
+Enable `cm-implements` in the snapshot engine. Composition output is validated
+with proposal support matching the WIT encoder, replacing wasm-compose’s
+default-feature validation. The regression test invokes two imports of the same
+interface with distinct host implementations, both with and without WASI stubbing.
+
+Composition also preserves extern-name annotations on outer imports. wasm-compose
+0.258 otherwise keeps labels but loses `(implements ...)`, breaking wasmCloud
+routing. `componentize-qjs compose <input> --definition <provider> -o <output>`
+uses the same validated path for subsequent provider composition (including SQLite).
