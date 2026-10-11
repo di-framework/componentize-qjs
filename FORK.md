@@ -38,16 +38,16 @@ using npm OIDC (no token).
 
 | Version | Dist-tag | Contents |
 | --- | --- | --- |
-| `0.4.4-di.4` | `di` | JS wrapper |
-| `0.4.4-di.4-darwin-arm64` | `di-darwin-arm64` | native CLI |
-| `0.4.4-di.4-darwin-x64` | `di-darwin-x64` | native CLI |
-| `0.4.4-di.4-linux-x64` | `di-linux-x64` | native CLI |
-| `0.4.4-di.4-linux-arm64` | `di-linux-arm64` | native CLI |
-| `0.4.4-di.4-win32-x64` | `di-win32-x64` | native CLI |
+| `0.4.4-di.5` | `di` | JS wrapper |
+| `0.4.4-di.5-darwin-arm64` | `di-darwin-arm64` | native CLI |
+| `0.4.4-di.5-darwin-x64` | `di-darwin-x64` | native CLI |
+| `0.4.4-di.5-linux-x64` | `di-linux-x64` | native CLI |
+| `0.4.4-di.5-linux-arm64` | `di-linux-arm64` | native CLI |
+| `0.4.4-di.5-win32-x64` | `di-win32-x64` | native CLI |
 
 npm cannot install two versions of the same package as optional dependencies, so
 the wrapper aliases each native version into an unscoped folder
-(`componentize-qjs-darwin-arm64`: `npm:@di-framework/componentize-qjs@0.4.4-di.4-darwin-arm64`)
+(`componentize-qjs-darwin-arm64`: `npm:@di-framework/componentize-qjs@0.4.4-di.5-darwin-arm64`)
 and each tarball's `os` / `cpu` fields skip the wrong machine.
 
 On npmjs.com, the trusted publisher for `@di-framework/componentize-qjs` is:
@@ -82,3 +82,20 @@ Composition also preserves extern-name annotations on outer imports. wasm-compos
 0.258 otherwise keeps labels but loses `(implements ...)`, breaking wasmCloud
 routing. `componentize-qjs compose <input> --definition <provider> -o <output>`
 uses the same validated path for subsequent provider composition (including SQLite).
+
+## 64-bit integers are BigInt (di.5)
+
+WIT `s64` and `u64` values reach JavaScript as `BigInt`, as in jco. Export
+parameters and import results above 2^53 used to arrive as a rounded `Number`
+(di-framework/platform#153). Going the other way, the runtime accepts a `BigInt`
+(wrapped modulo 2^64, like `BigInt.asIntN` / `BigInt.asUintN`) or a `Number`
+that is an integer within `Number.MAX_SAFE_INTEGER`. Any other `Number` traps
+instead of storing a rounded value, and `u64` rejects negative Numbers.
+
+Guest code that does arithmetic on a 64-bit import result with Number operands
+(`n + 1`), or passes one to `JSON.stringify`, must now convert explicitly.
+
+Only the default runtime (`crates/core/prebuilt/runtime.wasm`) is rebuilt, with
+`COMPONENTIZE_QJS_REBUILD_RUNTIME=1 cargo build -p componentize-qjs --release`.
+The `--sync` and `--opt-size` variants are still the upstream 0.4.4 prebuilts
+and keep the old Number behaviour.

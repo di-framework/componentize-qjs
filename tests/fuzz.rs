@@ -19,7 +19,6 @@ use wasmtime::component::Val;
 
 use componentize_qjs::{ComponentizeOpts, Runtime};
 
-const MAX_SAFE_INT: i64 = (1i64 << 53) - 1;
 const MEM_TOLERANCE: i64 = 1024;
 
 #[derive(Debug, Clone)]
@@ -102,8 +101,8 @@ impl Arbitrary for Op {
             1 => Op::EchoU16(u16::arbitrary(g)),
             2 => Op::EchoU32(u32::arbitrary(g)),
             3 => Op::EchoS32(i32::arbitrary(g)),
-            4 => Op::EchoS64(i64::arbitrary(g) % (MAX_SAFE_INT + 1)),
-            5 => Op::EchoU64(u64::arbitrary(g) % (MAX_SAFE_INT as u64 + 1)),
+            4 => Op::EchoS64(i64::arbitrary(g)),
+            5 => Op::EchoU64(u64::arbitrary(g)),
             6 => Op::EchoF64(finite_f64(g)),
             7 => Op::EchoBool(bool::arbitrary(g)),
             8 => Op::EchoChar(char::arbitrary(g)),

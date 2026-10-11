@@ -10,7 +10,7 @@ use crate::{BorrowedResource, QjsCallContext, with_ctx};
 
 use rquickjs::class::Class;
 use rquickjs::function::This;
-use rquickjs::{Coerced, Constructor, Function, IntoJs, Persistent, Symbol, Value};
+use rquickjs::{BigInt, Coerced, Constructor, Function, IntoJs, Persistent, Symbol, Value};
 use smallvec::SmallVec;
 use wit_dylib_ffi::{
     Call, Enum, Flags, Future, List, Map, Record, Resource, Stream, Tuple, Type, Variant,
@@ -29,6 +29,39 @@ fn option_is_nested(ty: WitOption) -> bool {
             _ => return false,
         }
     }
+}
+
+/// Largest integer a JS Number holds exactly (`Number.MAX_SAFE_INTEGER`).
+const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
+
+/// Lower a JS value to the bits of a WIT `s64` / `u64`.
+///
+/// A BigInt wraps modulo 2^64 (`BigInt.asIntN` / `BigInt.asUintN`), as in jco.
+/// A Number is accepted only when it is an integer within the safe range, so a
+/// value that already lost precision fails instead of being stored rounded.
+/// `u64` rejects negative Numbers.
+fn lower_64(v: &Value<'_>, signed: bool) -> i64 {
+    let ty = if signed { "s64" } else { "u64" };
+    if v.is_big_int() {
+        let mut out = 0i64;
+        let rc = unsafe {
+            rquickjs::qjs::JS_ToBigInt64(v.ctx().as_raw().as_ptr(), &mut out, v.as_raw())
+        };
+        assert!(rc == 0, "expected {ty}: BigInt conversion failed");
+        return out;
+    }
+    let n = match v.as_int() {
+        Some(n) => n as f64,
+        None => v
+            .as_float()
+            .unwrap_or_else(|| panic!("expected {ty}: a BigInt or an integer Number")),
+    };
+    assert!(
+        n.fract() == 0.0 && n.abs() <= MAX_SAFE_INTEGER,
+        "expected {ty}: Number {n} is not a safe integer, pass a BigInt"
+    );
+    assert!(signed || n >= 0.0, "expected u64: Number {n} is negative");
+    n as i64
 }
 
 /// Pop a value from the stack, restore it in the current JS context, and transform it.
@@ -125,11 +158,11 @@ impl Call for QjsCallContext {
     }
 
     fn pop_u64(&mut self) -> u64 {
-        pop_with(self, |v| v.get().expect("expected number"))
+        pop_with(self, |v| lower_64(&v, false) as u64)
     }
 
     fn pop_s64(&mut self) -> i64 {
-        pop_with(self, |v| v.get().expect("expected number"))
+        pop_with(self, |v| lower_64(&v, true))
     }
 
     fn pop_f32(&mut self) -> f32 {
@@ -488,11 +521,15 @@ impl Call for QjsCallContext {
     }
 
     fn push_u64(&mut self, val: u64) {
-        push_with(self, |ctx| val.into_js(ctx).unwrap());
+        push_with(self, |ctx| {
+            BigInt::from_u64(ctx.clone(), val).unwrap().into_value()
+        });
     }
 
     fn push_s64(&mut self, val: i64) {
-        push_with(self, |ctx| val.into_js(ctx).unwrap());
+        push_with(self, |ctx| {
+            BigInt::from_i64(ctx.clone(), val).unwrap().into_value()
+        });
     }
 
     fn push_f32(&mut self, val: f32) {
