@@ -429,6 +429,134 @@ fn test_all_integer_types() {
 }
 
 #[test]
+fn test_64bit_integers_are_bigint() {
+    const SAFE: i64 = (1 << 53) - 1;
+    TestCase::new()
+        .wit(
+            r#"
+            package test:wide;
+            world wide {
+                export echo-s64: func(v: s64) -> s64;
+                export echo-u64: func(v: u64) -> u64;
+                export inc-s64: func(v: s64) -> s64;
+                export type-of-s64: func(v: s64) -> string;
+                export type-of-u64: func(v: u64) -> string;
+                export show-s64: func(v: s64) -> string;
+                export number-s64: func(v: s64) -> s64;
+                export number-u64: func(v: u64) -> u64;
+                export wrap-u64: func() -> u64;
+                export negative-u64: func() -> u64;
+                export wrap-s64: func() -> s64;
+                export overflow-s64: func() -> s64;
+            }
+        "#,
+        )
+        .script(
+            r#"
+            export function echoS64(v) { return v; }
+            export function echoU64(v) { return v; }
+            export function incS64(v) { return v + 1n; }
+            export function typeOfS64(v) { return typeof v; }
+            export function typeOfU64(v) { return typeof v; }
+            export function showS64(v) { return v.toString(); }
+            export function numberS64(v) { return Number(v); }
+            export function numberU64(v) { return Number(v); }
+            export function wrapU64() { return 2n ** 64n + 5n; }
+            export function negativeU64() { return -1n; }
+            export function wrapS64() { return 2n ** 64n + 5n; }
+            export function overflowS64() { return 2n ** 63n; }
+        "#,
+        )
+        .expect_call("echo-s64", vec![Val::S64(1 << 62)], Val::S64(1 << 62))
+        .expect_call("echo-s64", vec![Val::S64(-(1 << 62))], Val::S64(-(1 << 62)))
+        .expect_call("echo-s64", vec![Val::S64(i64::MAX)], Val::S64(i64::MAX))
+        .expect_call("echo-s64", vec![Val::S64(i64::MIN)], Val::S64(i64::MIN))
+        .expect_call("echo-u64", vec![Val::U64(1 << 62)], Val::U64(1 << 62))
+        .expect_call("echo-u64", vec![Val::U64(u64::MAX)], Val::U64(u64::MAX))
+        // 2^53 + 1 is the value from di-framework/platform#153.
+        .expect_call("inc-s64", vec![Val::S64(1 << 53)], Val::S64((1 << 53) + 1))
+        .expect_call(
+            "show-s64",
+            vec![Val::S64((1 << 53) + 1)],
+            Val::String("9007199254740993".into()),
+        )
+        .expect_call(
+            "type-of-s64",
+            vec![Val::S64(1)],
+            Val::String("bigint".into()),
+        )
+        .expect_call(
+            "type-of-u64",
+            vec![Val::U64(1)],
+            Val::String("bigint".into()),
+        )
+        // Numbers still lower when they are safe integers.
+        .expect_call("number-s64", vec![Val::S64(SAFE)], Val::S64(SAFE))
+        .expect_call("number-s64", vec![Val::S64(-SAFE)], Val::S64(-SAFE))
+        .expect_call("number-s64", vec![Val::S64(-7)], Val::S64(-7))
+        .expect_call(
+            "number-u64",
+            vec![Val::U64(SAFE as u64)],
+            Val::U64(SAFE as u64),
+        )
+        // BigInts wrap modulo 2^64, like jco's BigInt.asUintN / BigInt.asIntN.
+        .expect_call("wrap-u64", vec![], Val::U64(5))
+        .expect_call("negative-u64", vec![], Val::U64(u64::MAX))
+        .expect_call("wrap-s64", vec![], Val::S64(5))
+        .expect_call("overflow-s64", vec![], Val::S64(i64::MIN))
+        .build()
+        .unwrap()
+        .run();
+}
+
+/// A Number that is not an exact 64-bit integer traps instead of being rounded.
+#[test]
+fn test_64bit_integers_reject_inexact_numbers() {
+    for (ty, value, message) in [
+        (
+            "s64",
+            "2 ** 53",
+            "expected s64: Number 9007199254740992 is not a safe integer",
+        ),
+        (
+            "s64",
+            "1.5",
+            "expected s64: Number 1.5 is not a safe integer",
+        ),
+        (
+            "s64",
+            "\"1\"",
+            "expected s64: a BigInt or an integer Number",
+        ),
+        ("u64", "-1", "expected u64: Number -1 is negative"),
+    ] {
+        let mut instance = TestCase::new()
+            .wit(&format!(
+                "package test:inexact; world inexact {{ export get: func() -> {ty}; }}"
+            ))
+            .script(&format!("export function get() {{ return {value}; }}"))
+            .build()
+            .unwrap();
+        let (inner, store) = instance.parts();
+        let func = inner.get_func(&mut *store, "get").expect("get export");
+        let mut results = [Val::Bool(false)];
+        let err = func
+            .call(&mut *store, &[], &mut results)
+            .expect_err(&format!("{ty} from {value} should trap"));
+        assert_eq!(
+            err.downcast_ref::<wasmtime::Trap>(),
+            Some(&wasmtime::Trap::UnreachableCodeReached),
+            "{ty} from {value} should trap with a guest panic, got {err:?}"
+        );
+        let stderr = instance.stderr_string();
+        assert!(
+            stderr.contains(message),
+            "{ty} from {value}: stderr should contain {message:?}, got {stderr:?}"
+        );
+    }
+}
+
+#[test]
 fn test_float_types() {
     TestCase::new()
         .wit(
