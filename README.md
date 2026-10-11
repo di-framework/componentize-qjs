@@ -119,6 +119,12 @@ async support. Pass `--sync` to embed the built-in non-async runtime instead,
 producing components that run on hosts without component-model async support. A
 custom runtime can also be supplied with `--runtime`.
 
+In this fork, only the default runtime maps WIT `s64` / `u64` to `bigint`. The
+`--sync` and `--opt-size` runtimes, a binary built with `--no-default-features`
+(which embeds the non-async runtime as its default), and the `opt-size` Cargo or
+napi feature all use the upstream 0.4.4 runtime, where `s64` / `u64` are
+`number`. See [64-bit integers](#64-bit-integers).
+
 ## CLI Reference
 
 ```
@@ -134,16 +140,16 @@ componentize-qjs [OPTIONS] --wit <WIT> --js <JS>
 | `--world <NAME>` | `-n` | World name when the WIT defines multiple worlds |
 | `--stub-wasi` | | Replace all WASI imports with trap stubs |
 | `--minify` | `-m` | Minify JS source before embedding |
-| `--opt-size` | | Use the built-in QuickJS runtime optimized for size |
-| `--sync` | | Use the built-in non-async runtime (combine with `--opt-size` for the non-async opt-size runtime) |
+| `--opt-size` | | Use the built-in QuickJS runtime optimized for size (upstream 0.4.4 runtime: `s64`/`u64` are `number`) |
+| `--sync` | | Use the built-in non-async runtime (combine with `--opt-size` for the non-async opt-size runtime; upstream 0.4.4 runtime: `s64`/`u64` are `number`) |
 | `--runtime <PATH>` | | Custom QuickJS runtime Wasm module to embed |
 
 ### Cargo features
 
 | Feature | Effect |
 |---|---|
-| `component-model-async` | (default) Embed the component-model async runtime as the default built-in. The non-async runtime is always embedded and selectable via `--sync`. Disable to build a smaller binary with only the non-async runtime |
-| `opt-size` | Selects the bundled opt-size runtime when no runtime option is provided by the CLI or npm API |
+| `component-model-async` | (default) Embed the component-model async runtime as the default built-in. The non-async runtime is always embedded and selectable via `--sync`. Disable to build a smaller binary with only the non-async runtime (upstream 0.4.4 runtime: `s64`/`u64` are `number`) |
+| `opt-size` | Selects the bundled opt-size runtime when no runtime option is provided by the CLI or npm API (upstream 0.4.4 runtime: `s64`/`u64` are `number`) |
 
 Build with features:
 
@@ -197,10 +203,26 @@ a project root that contains shared files or `node_modules`.
 | `bool` | `boolean` | |
 | `u8`, `u16`, `u32` | `number` | |
 | `s8`, `s16`, `s32` | `number` | |
-| `u64`, `s64` | `number` | Precision limited to 2⁵³ (Number.MAX_SAFE_INTEGER) |
+| `u64`, `s64` | `bigint` | See [64-bit integers](#64-bit-integers) |
 | `f32`, `f64` | `number` | |
 | `char` | `string` | Must be exactly one Unicode scalar value |
 | `string` | `string` | |
+
+#### 64-bit integers
+
+With the default runtime, WIT `s64` and `u64` values reach JavaScript as
+`bigint`, as in jco. When JavaScript passes or returns one, the runtime accepts:
+
+- a `bigint`, wrapped modulo 2⁶⁴ like `BigInt.asIntN(64, v)` /
+  `BigInt.asUintN(64, v)` (so `-1n` as `u64` is `u64::MAX`), or
+- a `number` that is an integer within `Number.MAX_SAFE_INTEGER`.
+
+Any other value traps instead of being rounded, and a negative `number` traps
+for `u64`.
+
+The `--sync` and `--opt-size` runtimes, `--no-default-features` builds and the
+`opt-size` feature use the upstream 0.4.4 runtime. There, `s64` / `u64` are
+`number` with precision limited to 2⁵³, and a `bigint` does not lower.
 
 ### Compound Types
 
@@ -488,6 +510,8 @@ const { component } = await componentize({
 Runtime selection is available through `optSize`, `sync`, `runtime`, or
 `runtimeBytes`. `optSize` and `sync` may be combined to select the non-async
 opt-size runtime, but neither can be combined with a custom `runtime`/`runtimeBytes`.
+`optSize` and `sync` select the upstream 0.4.4 runtime, where `s64` / `u64` are
+`number` rather than `bigint`.
 The `runtime` option is a path to a custom QuickJS runtime Wasm module.
 
 ## Acknowledgments

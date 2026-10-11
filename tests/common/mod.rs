@@ -199,6 +199,7 @@ pub struct ComponentInstance {
     store: Store<WasiCtxState>,
     inner: Instance,
     stdout: MemoryOutputPipe,
+    stderr: MemoryOutputPipe,
     expectations: Vec<Expectation>,
 }
 
@@ -229,9 +230,11 @@ impl ComponentInstance {
             }
         }
         let stdout = MemoryOutputPipe::new(10000);
+        let stderr = MemoryOutputPipe::new(10000);
         wasi_builder
             .stdin(MemoryInputPipe::new(stdin.unwrap_or_default()))
-            .stdout(stdout.clone());
+            .stdout(stdout.clone())
+            .stderr(stderr.clone());
         let wasi = wasi_builder.build();
         let table = ResourceTable::new();
         let mut store = Store::new(engine, WasiCtxState { wasi, table });
@@ -245,6 +248,7 @@ impl ComponentInstance {
             store,
             inner: instance,
             stdout,
+            stderr,
             expectations,
         })
     }
@@ -284,6 +288,10 @@ impl ComponentInstance {
 
     pub fn stdout_bytes(&self) -> Vec<u8> {
         self.stdout.contents().to_vec()
+    }
+
+    pub fn stderr_string(&self) -> String {
+        String::from_utf8_lossy(&self.stderr.contents()).into_owned()
     }
 
     /// Get the wasmtime instance and store for typed/interface function access.

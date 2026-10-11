@@ -25,10 +25,13 @@ Wasmtime **48** can stub those imports with `func_new_concurrent` when
   resource-free `monotonic-clock` `now`/`resolution`). Full P2/P3 `add_to_linker`
   disagrees with the prebuilt `wasi:io@0.2.12` `error` resource.
 
-The embedded QuickJS **runtime.wasm** is still the 0.4.4 prebuilt, vendored
-under `crates/core/prebuilt/` (gitignored `*.wasm` has an exception for that
-directory). This fork does not rebuild `wasm32-wasip2` artifacts. CI uses those
-files instead of compiling the runtime.
+The embedded QuickJS runtimes are vendored under `crates/core/prebuilt/`
+(gitignored `*.wasm` has an exception for that directory), and CI embeds those
+files instead of compiling the runtime. Since di.4, the default
+**runtime.wasm** is rebuilt from this fork's `crates/runtime` source (see
+[64-bit integers are BigInt](#64-bit-integers-are-bigint-di5)). The other three
+(`runtime-sync.wasm`, `runtime-opt-size.wasm`, `runtime-opt-size-sync.wasm`) are
+still the upstream 0.4.4 prebuilts.
 
 ## npm
 
@@ -96,6 +99,23 @@ Guest code that does arithmetic on a 64-bit import result with Number operands
 (`n + 1`), or passes one to `JSON.stringify`, must now convert explicitly.
 
 Only the default runtime (`crates/core/prebuilt/runtime.wasm`) is rebuilt, with
-`COMPONENTIZE_QJS_REBUILD_RUNTIME=1 cargo build -p componentize-qjs --release`.
+`COMPONENTIZE_QJS_REBUILD_RUNTIME=1 cargo build -p componentize-qjs --release`,
+then copied from `OUT_DIR` with its `.sha256` updated. The di.5 build used
+rustup rustc 1.97.1 with the `wasm32-wasip2` target installed, plus wasi-sdk 33
+and binaryen 130 (both pinned in `crates/core/build.rs`). The output is
+reproducible byte for byte with that toolchain. A `cargo` that is not from
+rustup and lacks the `wasm32-wasip2` std fails inside the nested build with
+E0463, so put `~/.cargo/bin` first on `PATH`.
+
+Because it is a `--release` build, `build.rs` runs
+`wasm-opt -O3 --strip-debug --strip-producers`, so the prebuilt has no `name`
+or `producers` section, like the upstream prebuilts. Panic messages (such as
+`expected s64: ...`) still reach guest stderr, but wasmtime trap backtraces show
+`wasm function N`. For symbolized frames, rebuild without `--release`
+(`COMPONENTIZE_QJS_REBUILD_RUNTIME=1 cargo build -p componentize-qjs`) and use
+that runtime locally.
+
 The `--sync` and `--opt-size` variants are still the upstream 0.4.4 prebuilts
-and keep the old Number behaviour.
+and keep the old Number behaviour. So does a binary built with
+`--no-default-features` (its default runtime aliases `runtime-sync.wasm`) and
+the Cargo / napi `opt-size` feature.

@@ -444,6 +444,10 @@ fn test_64bit_integers_are_bigint() {
                 export show-s64: func(v: s64) -> string;
                 export number-s64: func(v: s64) -> s64;
                 export number-u64: func(v: u64) -> u64;
+                export wrap-u64: func() -> u64;
+                export negative-u64: func() -> u64;
+                export wrap-s64: func() -> s64;
+                export overflow-s64: func() -> s64;
             }
         "#,
         )
@@ -457,6 +461,10 @@ fn test_64bit_integers_are_bigint() {
             export function showS64(v) { return v.toString(); }
             export function numberS64(v) { return Number(v); }
             export function numberU64(v) { return Number(v); }
+            export function wrapU64() { return 2n ** 64n + 5n; }
+            export function negativeU64() { return -1n; }
+            export function wrapS64() { return 2n ** 64n + 5n; }
+            export function overflowS64() { return 2n ** 63n; }
         "#,
         )
         .expect_call("echo-s64", vec![Val::S64(1 << 62)], Val::S64(1 << 62))
@@ -491,6 +499,11 @@ fn test_64bit_integers_are_bigint() {
             vec![Val::U64(SAFE as u64)],
             Val::U64(SAFE as u64),
         )
+        // BigInts wrap modulo 2^64, like jco's BigInt.asUintN / BigInt.asIntN.
+        .expect_call("wrap-u64", vec![], Val::U64(5))
+        .expect_call("negative-u64", vec![], Val::U64(u64::MAX))
+        .expect_call("wrap-s64", vec![], Val::S64(5))
+        .expect_call("overflow-s64", vec![], Val::S64(i64::MIN))
         .build()
         .unwrap()
         .run();
@@ -499,11 +512,23 @@ fn test_64bit_integers_are_bigint() {
 /// A Number that is not an exact 64-bit integer traps instead of being rounded.
 #[test]
 fn test_64bit_integers_reject_inexact_numbers() {
-    for (ty, value) in [
-        ("s64", "2 ** 53"),
-        ("s64", "1.5"),
-        ("s64", "\"1\""),
-        ("u64", "-1"),
+    for (ty, value, message) in [
+        (
+            "s64",
+            "2 ** 53",
+            "expected s64: Number 9007199254740992 is not a safe integer",
+        ),
+        (
+            "s64",
+            "1.5",
+            "expected s64: Number 1.5 is not a safe integer",
+        ),
+        (
+            "s64",
+            "\"1\"",
+            "expected s64: a BigInt or an integer Number",
+        ),
+        ("u64", "-1", "expected u64: Number -1 is negative"),
     ] {
         let mut instance = TestCase::new()
             .wit(&format!(
@@ -515,8 +540,19 @@ fn test_64bit_integers_reject_inexact_numbers() {
         let (inner, store) = instance.parts();
         let func = inner.get_func(&mut *store, "get").expect("get export");
         let mut results = [Val::Bool(false)];
-        let result = func.call(&mut *store, &[], &mut results);
-        assert!(result.is_err(), "{ty} from {value} should trap");
+        let err = func
+            .call(&mut *store, &[], &mut results)
+            .expect_err(&format!("{ty} from {value} should trap"));
+        assert_eq!(
+            err.downcast_ref::<wasmtime::Trap>(),
+            Some(&wasmtime::Trap::UnreachableCodeReached),
+            "{ty} from {value} should trap with a guest panic, got {err:?}"
+        );
+        let stderr = instance.stderr_string();
+        assert!(
+            stderr.contains(message),
+            "{ty} from {value}: stderr should contain {message:?}, got {stderr:?}"
+        );
     }
 }
 

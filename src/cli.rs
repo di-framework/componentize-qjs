@@ -49,12 +49,14 @@ pub struct CliArgs {
     #[arg(long)]
     pub disable_gc: bool,
 
-    /// Use the built-in runtime optimized for smaller generated components
+    /// Use the built-in runtime optimized for smaller generated components.
+    /// This is the upstream 0.4.4 runtime: s64/u64 are Numbers, not BigInts
     #[arg(long, conflicts_with = "runtime")]
     pub opt_size: bool,
 
     /// Use the built-in non-async runtime, producing components that do not use
-    /// the component-model async ABI
+    /// the component-model async ABI. This is the upstream 0.4.4 runtime:
+    /// s64/u64 are Numbers, not BigInts
     #[arg(long, conflicts_with = "runtime")]
     pub sync: bool,
 
